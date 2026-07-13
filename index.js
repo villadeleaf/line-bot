@@ -9,6 +9,13 @@ const line = require("@line/bot-sdk");
 const path = require("path");
 const fs = require("fs");
 const { generateReply } = require("./brain");
+const { faqEnabled, loadFaq, teachFaq, faqText } = require("./faq");
+
+// LINE userId ของแอดมินที่สอนบอทได้ (คั่นด้วยจุลภาค) เช่น "U123...,U456..."
+const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // ---- กุญแจ LINE + ที่อยู่สาธารณะ (สำหรับลิงก์รูป) ----
 // .trim() กันช่องว่าง/ขึ้นบรรทัดใหม่ที่อาจติดมาตอน paste ค่าใน Render
@@ -94,9 +101,50 @@ function buildMessages(userId, replyText) {
   return messages.slice(0, 5); // LINE จำกัด 5 ข้อความต่อการตอบ 1 ครั้ง
 }
 
+// ตอบกลับข้อความเดียวสั้น ๆ (ใช้กับคำสั่งแอดมิน)
+async function replyText1(replyToken, text) {
+  await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text }] });
+}
+
 async function handleTextMessage(event) {
   const userId = event.source.userId || "unknown";
   const userText = event.message.text;
+  const trimmed = userText.trim();
+  const isAdmin = ADMIN_USER_IDS.includes(userId);
+
+  // ---- คำสั่ง #myid : บอทบอก LINE userId ของคุณ (ไว้ตั้งค่าแอดมิน) ----
+  if (trimmed === "#myid") {
+    await replyText1(event.replyToken, `LINE userId ของคุณคือ:\n${userId}`);
+    return;
+  }
+
+  // ---- คำสั่ง #สอน คำถาม | คำตอบ : สอนบอท (เฉพาะแอดมิน) ----
+  if (trimmed.startsWith("#สอน")) {
+    if (!isAdmin) {
+      await replyText1(event.replyToken, "ขออภัยค่ะ คำสั่งนี้ใช้ได้เฉพาะแอดมินเท่านั้นนะคะ 🙏");
+      return;
+    }
+    const body = trimmed.replace(/^#สอน\s*/, "");
+    const idx = body.indexOf("|");
+    if (idx === -1) {
+      await replyText1(event.replyToken, 'พิมพ์แบบนี้นะคะ:\n#สอน คำถาม | คำตอบ\n\nตัวอย่าง:\n#สอน มีที่จอดรถไหม | มีค่ะ จอดฟรีหน้าห้อง 10 คัน');
+      return;
+    }
+    const q = body.slice(0, idx).trim();
+    const a = body.slice(idx + 1).trim();
+    if (!q || !a) {
+      await replyText1(event.replyToken, "ใส่ทั้งคำถามและคำตอบด้วยนะคะ 🙏\n#สอน คำถาม | คำตอบ");
+      return;
+    }
+    try {
+      await teachFaq(q, a);
+      await replyText1(event.replyToken, `จำแล้วค่ะ ✅\nถาม: ${q}\nตอบ: ${a}\n\nครั้งหน้าลูกค้าถามเรื่องนี้ หนูตอบเองได้เลยค่ะ 😊`);
+    } catch (e) {
+      console.error("teachFaq error:", e.message);
+      await replyText1(event.replyToken, `บันทึกไม่สำเร็จค่ะ 🙏 (${e.message})`);
+    }
+    return;
+  }
 
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: userText });
@@ -104,9 +152,17 @@ async function handleTextMessage(event) {
     history = history.slice(-MAX_TURNS * 2);
   }
 
+  // ดึงความรู้ที่แอดมินสอนไว้ (จาก Google Sheet) มาแนบให้ AI
+  let extra = "";
+  try {
+    if (faqEnabled()) extra = faqText(await loadFaq());
+  } catch (e) {
+    console.error("loadFaq error:", e.message);
+  }
+
   let replyText;
   try {
-    replyText = await generateReply(history);
+    replyText = await generateReply(history, extra);
   } catch (err) {
     console.error("Claude error:", err);
     replyText = "";

@@ -74,18 +74,22 @@ function currentContext() {
 }
 
 // ---- สร้างคำตอบจากประวัติสนทนา ----
-async function generateReply(history) {
+//  extraKnowledge = ความรู้เพิ่มเติมที่แอดมินสอน (จาก Google Sheet) แนบท้าย (ไม่แคช เพราะเปลี่ยนได้)
+async function generateReply(history, extraKnowledge = "") {
+  const system = [
+    {
+      type: "text",
+      text: SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" }, // ประหยัดค่าใช้จ่ายจากข้อมูลที่ส่งซ้ำ
+    },
+    { type: "text", text: currentContext() }, // วันที่ (ไม่แคช เพราะเปลี่ยนทุกวัน)
+  ];
+  if (extraKnowledge) system.push({ type: "text", text: extraKnowledge });
+
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2000,
-    system: [
-      {
-        type: "text",
-        text: SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" }, // ประหยัดค่าใช้จ่ายจากข้อมูลที่ส่งซ้ำ
-      },
-      { type: "text", text: currentContext() }, // วันที่ (ไม่แคช เพราะเปลี่ยนทุกวัน)
-    ],
+    system,
     messages: history,
   });
 
