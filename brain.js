@@ -55,9 +55,11 @@ const SYSTEM_PROMPT = `คุณคือ "แอดมินสาว" ปร�
 ${knowledge}`;
 
 // ---- ตัวเชื่อม Claude ----
-//  .trim() กันช่องว่าง/ขึ้นบรรทัดใหม่ที่อาจติดมาตอน paste กุญแจ (เช่นบน Render)
-//  ถ้าไม่ตัดทิ้ง จะเจอ error "is not a legal HTTP header value"
-const anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY || "").trim() });
+//  ลบอักขระที่ไม่ใช่ตัวกุญแจออกทั้งหมด (ช่องว่าง/ขึ้นบรรทัด/อักขระซ่อน ที่อาจแทรก
+//  กลางกุญแจตอน paste บน Render) — กุญแจ Anthropic มีแค่ A-Z a-z 0-9 _ - เท่านั้น
+//  ถ้าไม่ล้าง จะเจอ error "is not a legal HTTP header value"
+const API_KEY = (process.env.ANTHROPIC_API_KEY || "").replace(/[^A-Za-z0-9_-]/g, "");
+const anthropic = new Anthropic({ apiKey: API_KEY });
 
 // ---- ข้อมูลวันที่ปัจจุบัน (ช่วยบอทคิดราคาตามฤดู/วัน) ----
 const THAI_DAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
