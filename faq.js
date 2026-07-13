@@ -38,16 +38,23 @@ async function loadFaq() {
 }
 
 // สอนบอท (เพิ่มความรู้ลงชีต)
+//  หมายเหตุ: Apps Script ตอบ POST กลับมาแบบ redirect (parse JSON ไม่ได้เสมอ)
+//  แต่การเขียนสำเร็จจริง → เลยยืนยันด้วยการ "อ่านกลับมาเช็ค" แทนที่จะเชื่อคำตอบ POST
 async function teachFaq(q, a) {
   if (!faqEnabled()) throw new Error("ยังไม่ได้ตั้งค่า Google Sheet");
-  const res = await fetch(FAQ_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secret: FAQ_SECRET, q, a }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!data.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
-  cache.at = 0; // บังคับรีเฟรชครั้งหน้า
+  try {
+    await fetch(FAQ_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: FAQ_SECRET, q, a }),
+    });
+  } catch (_e) {
+    // ไม่เป็นไร ไปเช็คผลจริงจากการอ่านกลับ
+  }
+  cache.at = 0; // บังคับรีเฟรช
+  const items = await loadFaq();
+  const ok = items.some((x) => x.q === q && x.a === a);
+  if (!ok) throw new Error("บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ");
   return true;
 }
 
