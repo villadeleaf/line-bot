@@ -11,9 +11,10 @@ const fs = require("fs");
 const { generateReply } = require("./brain");
 
 // ---- กุญแจ LINE + ที่อยู่สาธารณะ (สำหรับลิงก์รูป) ----
-const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
-const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
+// .trim() กันช่องว่าง/ขึ้นบรรทัดใหม่ที่อาจติดมาตอน paste ค่าใน Render
+const LINE_CHANNEL_SECRET = (process.env.LINE_CHANNEL_SECRET || "").trim();
+const LINE_CHANNEL_ACCESS_TOKEN = (process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim();
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/$/, "");
 
 const lineClient = new line.messagingApi.MessagingApiClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
