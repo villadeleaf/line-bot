@@ -132,6 +132,20 @@ async function handleTextMessage(event) {
 const app = express();
 app.use("/images", express.static(path.join(__dirname, "images")));
 app.get("/", (_req, res) => res.send("LINE Claude bot is running ✅"));
+
+// ปุ่มทดสอบลับ: เช็คว่ารุ่นโค้ดไหนกำลังรัน + กุญแจสะอาดไหม + AI ตอบได้ไหม
+app.get("/selftest", async (_req, res) => {
+  const raw = process.env.ANTHROPIC_API_KEY || "";
+  const clean = raw.replace(/[^A-Za-z0-9_-]/g, "");
+  let claude;
+  try {
+    const reply = await generateReply([{ role: "user", content: "สวัสดี" }]);
+    claude = reply ? "OK: " + reply.slice(0, 50) : "EMPTY_REPLY";
+  } catch (e) {
+    claude = "ERROR: " + (e && e.message ? e.message : String(e));
+  }
+  res.json({ version: "v3-strip-keychars", keyRawLen: raw.length, keyCleanLen: clean.length, claude });
+});
 app.post(
   "/webhook",
   line.middleware({ channelSecret: LINE_CHANNEL_SECRET }),
