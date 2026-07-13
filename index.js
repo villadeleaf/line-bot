@@ -26,6 +26,7 @@ const lineClient = new line.messagingApi.MessagingApiClient({
 const IMAGE_KEYS = [
   "premier-king", "family-room", "sky-riverview",
   "luxury-villa", "pool-panoramic", "pool-pet", "view",
+  "package", // รูปเรทแพ็กเกจเหมา/กรุ๊ป (วันธรรมดา/เสาร์-อาทิตย์/เทศกาล)
 ];
 
 function loadImages() {
