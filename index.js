@@ -1,65 +1,96 @@
 // ============================================================
-//  บอท LINE ตอบลูกค้าอัตโนมัติ ด้วย Claude AI
-//  - ขายห้องพัก / ขายอาหาร / ให้ข้อมูล 24 ชม.
-//  ปกติคุณไม่ต้องแก้ไฟล์นี้เลย — แก้แค่ข้อมูลร้านในไฟล์ data/knowledge.md
+//  บอท LINE ตอบลูกค้าอัตโนมัติ ด้วย Claude AI + ส่งรูปหลายรูปได้
+//  สมองบอท (ข้อมูล+บุคลิก) อยู่ใน brain.js + data/knowledge.md
+//  รูปห้อง/บรรยากาศ อยู่ในโฟลเดอร์ images/ (ห้องละหลายรูป)
 // ============================================================
 
 const express = require("express");
 const line = require("@line/bot-sdk");
-const Anthropic = require("@anthropic-ai/sdk");
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
+const { generateReply } = require("./brain");
 
-// ---- ตั้งค่ากุญแจ (มาจาก Environment Variables ตอน deploy) ----
+// ---- กุญแจ LINE + ที่อยู่สาธารณะ (สำหรับลิงก์รูป) ----
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 
-// ---- เลือกรุ่น AI ----
-//  claude-haiku-4-5  = ถูก + เร็ว (แนะนำสำหรับตอบลูกค้าทั่วไป)
-//  claude-sonnet-5   = ฉลาดกว่า แต่แพงกว่า (เปลี่ยนได้ถ้าต้องการคำตอบซับซ้อน)
-const MODEL = "claude-haiku-4-5";
-
-// ---- โหลด "ความรู้" ของร้าน (ห้องพัก / เมนู / ข้อมูล) ----
-const knowledge = fs.readFileSync(
-  path.join(__dirname, "data", "knowledge.md"),
-  "utf8"
-);
-
-// ---- บุคลิกและวิธีตอบของบอท ----
-const SYSTEM_PROMPT = `คุณคือแอดมินร้านที่สุภาพ เป็นกันเอง และช่วยขายเก่ง ตอบลูกค้าทางแชท LINE
-
-หน้าที่ของคุณ:
-- ตอบคำถามเรื่องห้องพัก ราคา ห้องว่าง โปรโมชั่น
-- แนะนำและช่วยขายอาหาร/เมนู
-- ให้ข้อมูลทั่วไปของร้าน (ที่ตั้ง เวลาเปิด-ปิด การเดินทาง ฯลฯ)
-
-วิธีตอบ:
-- ตอบเป็นภาษาไทย สุภาพ ใช้คำลงท้าย "ค่ะ/ครับ" ให้เหมาะสม
-- กระชับ อ่านง่าย เหมาะกับการอ่านบนมือถือ ไม่ยาวเกินไป
-- ทำตัวเป็น "พนักงานขายเชิงรุก" ไม่ใช่แค่ตอบคำถาม — คิดแทนลูกค้า เสนอสิ่งที่คุ้มและน่าสนใจก่อนเสมอ
-- ชูความคุ้ม: ถ้าเป็นช่วง Low season ให้บอกว่าราคาพิเศษกว่าปกติ (เทียบให้เห็นว่า High season แพงกว่า) เพื่อกระตุ้นการตัดสินใจ
-- ขายพ่วง/อัปเซลเมื่อเหมาะ: เสนอกิจกรรม (ล่องเรือ 1,500฿, นวด 2 ชม. 700฿, ATV 300฿), อัปเกรดห้อง หรือเตียงเสริม เพื่อเพิ่มมูลค่าการจอง
-- ไฮไลต์จุดขาย/ของฟรี: ตักบาตรริมน้ำวันอาทิตย์, ตลาดนัดริมน้ำจามจุรีเสาร์-อาทิตย์, สระเกลือ, วิวแม่น้ำ, รับสัตว์เลี้ยง, อาหารเช้าฟรี
-- สร้างแรงจูงใจให้รีบจอง แต่ต้องเป็นความจริงเท่านั้น (เช่น ห้องรับสัตว์เลี้ยงมีจำนวนจำกัด) ห้ามโกหก
-- ปิดการขายทุกครั้ง: ถามวันเข้าพัก/จำนวนคืน แล้วชวนจอง
-- ห้ามลดราคา/ให้ส่วนลดที่ไม่มีในข้อมูลเอง ถ้าลูกค้าขอต่อราคา ให้เสนอสิ่งที่มี (แถมกิจกรรม/ชูโปรที่ระบุไว้) หรือบอกว่าจะเช็คโปรกับทีมงานให้
-- เรื่องราคาห้อง: ต้อง "ถามวันที่เข้าพักก่อนเสมอ" แล้วดูตารางราคาให้ตรงช่วง (Low/High season + วันธรรมดา อา-พฤ / ศุกร์-เสาร์ / วันหยุดยาว / เทศกาลสงกรานต์-ปีใหม่) ห้ามเดาหรือบอกราคาลอย ๆ ถ้ายังไม่รู้วันที่ ให้บอก "ราคาเริ่มต้น" ได้ แล้วถามวันที่เพื่อเช็คราคาจริง
-- ถ้าเป็นเรื่องที่ต้องยืนยัน (จองจริง/ชำระเงิน/เรื่องที่ไม่มีข้อมูล) ให้บอกลูกค้าว่าจะให้ทีมงานติดต่อกลับ หรือให้เบอร์ติดต่อ
-- ตอบเฉพาะจากข้อมูลด้านล่าง อย่าเดาข้อมูลที่ไม่มี ถ้าไม่รู้ให้บอกตามตรงและเสนอให้ติดต่อทีมงาน
-
-===== ข้อมูลร้าน =====
-${knowledge}`;
-
-// ---- ตัวเชื่อม ----
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 const lineClient = new line.messagingApi.MessagingApiClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
 });
 
-// ---- ความจำการสนทนา (เก็บชั่วคราวในหน่วยความจำ, รีเซ็ตเมื่อรีสตาร์ท) ----
+// ---- โหลดรายชื่อรูปแต่ละห้อง จากโฟลเดอร์ images/ อัตโนมัติ ----
+//  รูปปก = <key>.jpg (มาก่อน), รูปเพิ่ม = <key>-2.jpg, <key>-3.jpg ...
+//  อยากเพิ่ม/เปลี่ยนรูป: แค่เอาไฟล์ไปวาง/ลบในโฟลเดอร์ images/ แล้วรีสตาร์ทบอท
+const IMAGE_KEYS = [
+  "premier-king", "family-room", "sky-riverview",
+  "luxury-villa", "pool-panoramic", "pool-pet", "view",
+];
+
+function loadImages() {
+  const dir = path.join(__dirname, "images");
+  const all = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => /\.jpe?g$/i.test(f))
+    : [];
+  const map = {};
+  for (const key of IMAGE_KEYS) {
+    const re = new RegExp("^" + key + "(-(\\d+))?\\.jpe?g$", "i");
+    map[key] = all
+      .filter((f) => re.test(f))
+      .sort((a, b) => {
+        const na = a.toLowerCase() === key + ".jpg" ? 0 : parseInt((a.match(/-(\d+)\./) || [])[1] || "999", 10);
+        const nb = b.toLowerCase() === key + ".jpg" ? 0 : parseInt((b.match(/-(\d+)\./) || [])[1] || "999", 10);
+        return na - nb;
+      });
+  }
+  return map;
+}
+const IMAGES = loadImages();
+const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 รูป = 5 = ลิมิต LINE)
+
+// ---- ความจำการสนทนา + ความคืบหน้าการส่งรูป (ต่อคน) ----
 const conversations = new Map();
-const MAX_TURNS = 10; // จำย้อนหลังกี่รอบสนทนาต่อคน
+const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
+const MAX_TURNS = 10;
+
+function nextBatch(userId, key) {
+  const files = IMAGES[key] || [];
+  if (files.length === 0) return [];
+  if (!imgProgress.has(userId)) imgProgress.set(userId, {});
+  const prog = imgProgress.get(userId);
+  let start = prog[key] || 0;
+  if (start >= files.length) start = 0; // ดูครบแล้ว วนกลับไปเริ่มใหม่
+  const batch = files.slice(start, start + BATCH);
+  prog[key] = start + batch.length;
+  return batch;
+}
+
+// ---- แปลงคำตอบ (ที่อาจมี [[IMG:key]] / [[IMG:key:more]]) เป็นข้อความ LINE ----
+function buildMessages(userId, replyText) {
+  const files = [];
+  const text = replyText
+    // [[IMG:key:more]] = ส่งรูปชุดถัดไป (4 รูป)
+    .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => {
+      if (IMAGES[k]) files.push(...nextBatch(userId, k));
+      return "";
+    })
+    // [[IMG:key]] = ส่งรูปปก 1 รูป
+    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => {
+      if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]);
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const messages = [];
+  if (text) messages.push({ type: "text", text });
+  for (const f of files) {
+    if (!PUBLIC_URL) break;
+    const url = `${PUBLIC_URL}/images/${encodeURIComponent(f)}`;
+    messages.push({ type: "image", originalContentUrl: url, previewImageUrl: url });
+  }
+  return messages.slice(0, 5); // LINE จำกัด 5 ข้อความต่อการตอบ 1 ครั้ง
+}
 
 async function handleTextMessage(event) {
   const userId = event.source.userId || "unknown";
@@ -73,54 +104,38 @@ async function handleTextMessage(event) {
 
   let replyText;
   try {
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: [
-        {
-          type: "text",
-          text: SYSTEM_PROMPT,
-          cache_control: { type: "ephemeral" }, // ประหยัดค่าใช้จ่ายจากข้อมูลที่ส่งซ้ำ
-        },
-      ],
-      messages: history,
-    });
-
-    replyText = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
+    replyText = await generateReply(history);
   } catch (err) {
     console.error("Claude error:", err);
     replyText = "";
   }
 
+  let messages;
   if (!replyText) {
-    replyText = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งนะคะ 🙏";
+    messages = [
+      { type: "text", text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งนะคะ 🙏" },
+    ];
   } else {
     history.push({ role: "assistant", content: replyText });
     conversations.set(userId, history);
+    messages = buildMessages(userId, replyText);
+    if (messages.length === 0) {
+      messages = [{ type: "text", text: replyText }];
+    }
   }
 
-  await lineClient.replyMessage({
-    replyToken: event.replyToken,
-    messages: [{ type: "text", text: replyText }],
-  });
+  await lineClient.replyMessage({ replyToken: event.replyToken, messages });
 }
 
 // ---- เว็บเซิร์ฟเวอร์ ----
 const app = express();
-
-// หน้าเช็คว่าบอทออนไลน์
+app.use("/images", express.static(path.join(__dirname, "images")));
 app.get("/", (_req, res) => res.send("LINE Claude bot is running ✅"));
-
-// รับข้อความจาก LINE
 app.post(
   "/webhook",
   line.middleware({ channelSecret: LINE_CHANNEL_SECRET }),
   async (req, res) => {
-    res.status(200).end(); // ตอบ LINE ให้เร็วก่อน
+    res.status(200).end();
     const events = req.body.events || [];
     for (const event of events) {
       if (event.type === "message" && event.message.type === "text") {

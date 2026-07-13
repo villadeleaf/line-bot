@@ -1,3 +1,8 @@
 node_modules/
 .env
+.env.production
+.env.local
+*.log
+bot.log
+tunnel.log
 .DS_Store
