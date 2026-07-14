@@ -204,6 +204,25 @@ async function handlePostback(event) {
   }
 }
 
+// ---- ข้อความต้อนรับ เมื่อลูกค้าแอดบอทเป็นเพื่อนครั้งแรก (follow) ----
+const WELCOME_MESSAGE =
+  "สวัสดีค่ะ 🌿 น้องลีฟยินดีต้อนรับสู่ Villa de Leaf River Kaeng Krachan ค่ะ!\n\n" +
+  "รีสอร์ทริมแม่น้ำเพชรบุรี บรรยากาศธรรมชาติ สระว่ายน้ำเกลือ วิวแม่น้ำสวย ๆ 🏞️\n\n" +
+  "สนใจเรื่องไหนถามน้องลีฟได้เลยนะคะ 😊\n" +
+  "🛏️ ห้องพัก / ราคา / ดูรูป\n" +
+  "🍽️ อาหาร\n" +
+  "🎣 กิจกรรม (ล่องเรือ · ATV · นวด)\n" +
+  "🗺️ ที่เที่ยวรอบรีสอร์ท\n\n" +
+  "พิมพ์ทักมาได้เลยค่ะ น้องลีฟช่วยดูแลให้ทริปของคุณดีที่สุดเลยค่ะ 💚";
+
+async function handleFollow(event) {
+  try {
+    await replyText1(event.replyToken, WELCOME_MESSAGE);
+  } catch (e) {
+    console.error("handleFollow error:", e.message);
+  }
+}
+
 async function handleTextMessage(event) {
   const userId = event.source.userId || "unknown";
   const userText = event.message.text;
@@ -313,18 +332,14 @@ const app = express();
 app.use("/images", express.static(path.join(__dirname, "images")));
 app.get("/", (_req, res) => res.send("LINE Claude bot is running ✅"));
 
-// ปุ่มทดสอบลับ: เช็คว่ารุ่นโค้ดไหนกำลังรัน + กุญแจสะอาดไหม + AI ตอบได้ไหม
-app.get("/selftest", async (_req, res) => {
-  const raw = process.env.ANTHROPIC_API_KEY || "";
-  const clean = raw.replace(/[^A-Za-z0-9_-]/g, "");
-  let claude;
-  try {
-    const reply = await generateReply([{ role: "user", content: "สวัสดี" }]);
-    claude = reply ? "OK: " + reply.slice(0, 50) : "EMPTY_REPLY";
-  } catch (e) {
-    claude = "ERROR: " + (e && e.message ? e.message : String(e));
+// ปุ่มตรวจสถานะระบบ (ล็อกด้วยกุญแจ + ไม่เรียก AI = ไม่เปลืองค่าใช้จ่าย)
+//  ใช้เช็คว่ารุ่นโค้ดไหน deploy อยู่ + กุญแจสะอาดไหม + FAQ เชื่อมติดไหม
+const SELFTEST_KEY = (process.env.FAQ_SECRET || "").trim();
+app.get("/selftest", async (req, res) => {
+  if (!SELFTEST_KEY || (req.query.key || "") !== SELFTEST_KEY) {
+    return res.status(403).json({ error: "unauthorized" });
   }
-  // เช็คระบบ FAQ (Google Sheet)
+  const clean = (process.env.ANTHROPIC_API_KEY || "").replace(/[^A-Za-z0-9_-]/g, "");
   const faq = { enabled: faqEnabled(), count: 0, error: null };
   try {
     if (faqEnabled()) faq.count = (await loadFaq()).length;
@@ -332,10 +347,8 @@ app.get("/selftest", async (_req, res) => {
     faq.error = e && e.message ? e.message : String(e);
   }
   res.json({
-    version: "v5-alert",
-    keyRawLen: raw.length,
+    version: "v6-welcome",
     keyCleanLen: clean.length,
-    claude,
     adminCount: ADMIN_USER_IDS.length,
     faq,
   });
@@ -352,6 +365,8 @@ app.post(
           await handleTextMessage(event);
         } else if (event.type === "postback") {
           await handlePostback(event); // ปุ่มขอคุยเอง / ให้บอทต่อ
+        } else if (event.type === "follow") {
+          await handleFollow(event); // ลูกค้าแอดบอทใหม่ → ทักทายต้อนรับ
         }
       } catch (err) {
         console.error("Handle error:", err);
