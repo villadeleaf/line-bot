@@ -201,7 +201,21 @@ app.get("/selftest", async (_req, res) => {
   } catch (e) {
     claude = "ERROR: " + (e && e.message ? e.message : String(e));
   }
-  res.json({ version: "v3-strip-keychars", keyRawLen: raw.length, keyCleanLen: clean.length, claude });
+  // เช็คระบบ FAQ (Google Sheet)
+  const faq = { enabled: faqEnabled(), count: 0, error: null };
+  try {
+    if (faqEnabled()) faq.count = (await loadFaq()).length;
+  } catch (e) {
+    faq.error = e && e.message ? e.message : String(e);
+  }
+  res.json({
+    version: "v4-faq",
+    keyRawLen: raw.length,
+    keyCleanLen: clean.length,
+    claude,
+    adminCount: ADMIN_USER_IDS.length,
+    faq,
+  });
 });
 app.post(
   "/webhook",
