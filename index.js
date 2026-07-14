@@ -106,6 +106,104 @@ async function replyText1(replyToken, text) {
   await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text }] });
 }
 
+// ============================================================
+//  ระบบแจ้งเตือนแอดมิน + รับช่วงคุยเอง (handover)
+// ============================================================
+
+// ---- ชื่อโปรไฟล์ลูกค้า (แคชไว้ ไม่ต้องยิงทุกครั้ง) ----
+const nameCache = new Map();
+async function getName(userId) {
+  if (nameCache.has(userId)) return nameCache.get(userId);
+  let name = "ลูกค้า";
+  try {
+    const p = await lineClient.getProfile(userId);
+    if (p && p.displayName) name = p.displayName;
+  } catch (_e) {}
+  nameCache.set(userId, name);
+  return name;
+}
+
+// ---- สถานะ "หยุดบอทให้ลูกค้าคนนี้" (แอดมินคุยเอง) ----
+const pausedUsers = new Map(); // customerId -> pausedAt (ms)
+const AUTO_RESUME_MS = 2 * 60 * 60 * 1000; // ตื่นเองอัตโนมัติหลัง 2 ชม. (กันลืมกดให้บอทต่อ)
+function pauseUser(id) { pausedUsers.set(id, Date.now()); }
+function resumeUser(id) { pausedUsers.delete(id); }
+function isPaused(id) {
+  const t = pausedUsers.get(id);
+  if (!t) return false;
+  if (Date.now() - t > AUTO_RESUME_MS) { pausedUsers.delete(id); return false; } // ตื่นเอง
+  return true;
+}
+
+// ---- ข้อความแจ้งเตือน + ปุ่ม (buttons template) ----
+function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+function alertMessage(custId, name, type, detail) {
+  const title = type === "booking" ? "🔔 ลูกค้าสนใจจอง!" : "⚠️ น้องลีฟตอบไม่ได้ ขอทีมงานช่วย";
+  const text = clip(`${title}\n👤 ${name}\n${detail || ""}`.trim(), 160);
+  return {
+    type: "template",
+    altText: `${title} — ${name}`,
+    template: {
+      type: "buttons",
+      text,
+      actions: [
+        { type: "postback", label: "🙋 ขอคุยเอง", data: `handover:on:${custId}`, displayText: `ขอคุยเองกับ ${clip(name, 20)}` },
+      ],
+    },
+  };
+}
+
+function resumeMessage(custId, name) {
+  return {
+    type: "template",
+    altText: "ให้บอทตอบต่อ",
+    template: {
+      type: "buttons",
+      text: clip(`คุยกับ ${name} เสร็จแล้ว กดให้น้องลีฟดูแลต่อได้เลยค่ะ 🌿`, 160),
+      actions: [
+        { type: "postback", label: "🤖 ให้บอทตอบต่อ", data: `handover:off:${custId}`, displayText: `ให้บอทตอบต่อ ${clip(name, 20)}` },
+      ],
+    },
+  };
+}
+
+// ---- ส่งแจ้งเตือนไปหาแอดมินทุกคน ----
+async function pushAlert(custId, name, type, detail) {
+  if (ADMIN_USER_IDS.length === 0) return;
+  const msg = alertMessage(custId, name, type, detail);
+  for (const adminId of ADMIN_USER_IDS) {
+    try {
+      await lineClient.pushMessage({ to: adminId, messages: [msg] });
+    } catch (e) {
+      console.error("pushAlert error:", e.message);
+    }
+  }
+}
+
+// ---- แอดมินกดปุ่ม (postback) ขอคุยเอง / ให้บอทต่อ ----
+async function handlePostback(event) {
+  const userId = event.source.userId || "";
+  if (!ADMIN_USER_IDS.includes(userId)) return; // เฉพาะแอดมิน
+  const m = (event.postback.data || "").match(/^handover:(on|off):(.+)$/);
+  if (!m) return;
+  const [, action, custId] = m;
+  const name = await getName(custId);
+  if (action === "on") {
+    pauseUser(custId);
+    await lineClient.replyMessage({
+      replyToken: event.replyToken,
+      messages: [
+        { type: "text", text: `หยุดให้แล้วค่ะ 🤫 คุณคุยกับ ${name} ได้เลย น้องลีฟจะไม่แย่งตอบนะคะ (ถ้าลืมกดให้บอทต่อ เดี๋ยวหนูตื่นเองใน 2 ชม.)` },
+        resumeMessage(custId, name),
+      ],
+    });
+  } else {
+    resumeUser(custId);
+    await replyText1(event.replyToken, `น้องลีฟกลับมาดูแล ${name} ต่อแล้วค่ะ 🌿`);
+  }
+}
+
 async function handleTextMessage(event) {
   const userId = event.source.userId || "unknown";
   const userText = event.message.text;
@@ -146,6 +244,14 @@ async function handleTextMessage(event) {
     return;
   }
 
+  // ---- ถ้าแอดมินขอ "คุยเอง" กับลูกค้าคนนี้อยู่ → เก็บประวัติไว้ แต่บอทเงียบ ไม่ตอบ ----
+  if (!isAdmin && isPaused(userId)) {
+    const h = conversations.get(userId) || [];
+    h.push({ role: "user", content: userText });
+    conversations.set(userId, h);
+    return;
+  }
+
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: userText });
   if (history.length > MAX_TURNS * 2) {
@@ -169,11 +275,22 @@ async function handleTextMessage(event) {
   }
 
   let messages;
+  const alerts = []; // เรื่องที่ต้องเด้งเตือนแอดมิน (จอง / ตอบไม่ได้)
   if (!replyText) {
     messages = [
       { type: "text", text: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งนะคะ 🙏" },
     ];
   } else {
+    // ดึงมาร์กเกอร์ [[ALERT:booking:...]] / [[ALERT:help:...]] ออก (ลูกค้าไม่เห็น) เก็บไว้แจ้งแอดมิน
+    replyText = replyText
+      .replace(/\[\[ALERT:(booking|help):([^\]]*)\]\]/gi, (_m, type, detail) => {
+        alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
+        return "";
+      })
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!replyText) replyText = "รับเรื่องแล้วค่ะ เดี๋ยวน้องลีฟดูแลให้นะคะ 😊";
+
     history.push({ role: "assistant", content: replyText });
     conversations.set(userId, history);
     messages = buildMessages(userId, replyText);
@@ -183,6 +300,12 @@ async function handleTextMessage(event) {
   }
 
   await lineClient.replyMessage({ replyToken: event.replyToken, messages });
+
+  // ตอบลูกค้าเสร็จแล้ว → เด้งเตือนแอดมิน (ถ้ามี)
+  if (alerts.length > 0) {
+    const name = await getName(userId);
+    for (const a of alerts) await pushAlert(userId, name, a.type, a.detail);
+  }
 }
 
 // ---- เว็บเซิร์ฟเวอร์ ----
@@ -209,7 +332,7 @@ app.get("/selftest", async (_req, res) => {
     faq.error = e && e.message ? e.message : String(e);
   }
   res.json({
-    version: "v4-faq",
+    version: "v5-alert",
     keyRawLen: raw.length,
     keyCleanLen: clean.length,
     claude,
@@ -224,12 +347,14 @@ app.post(
     res.status(200).end();
     const events = req.body.events || [];
     for (const event of events) {
-      if (event.type === "message" && event.message.type === "text") {
-        try {
+      try {
+        if (event.type === "message" && event.message.type === "text") {
           await handleTextMessage(event);
-        } catch (err) {
-          console.error("Handle error:", err);
+        } else if (event.type === "postback") {
+          await handlePostback(event); // ปุ่มขอคุยเอง / ให้บอทต่อ
         }
+      } catch (err) {
+        console.error("Handle error:", err);
       }
     }
   }
