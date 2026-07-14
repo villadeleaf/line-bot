@@ -139,7 +139,12 @@ function isPaused(id) {
 function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
 function alertMessage(custId, name, type, detail) {
-  const title = type === "booking" ? "🔔 ลูกค้าสนใจจอง!" : "⚠️ น้องลีฟตอบไม่ได้ ขอทีมงานช่วย";
+  const titles = {
+    booking: "🔔 ลูกค้าสนใจจอง!",
+    lead: "🌟 ลูกค้าสนใจ (ยังไม่จอง) — น่าตามต่อ",
+    help: "⚠️ น้องลีฟตอบไม่ได้ ขอทีมงานช่วย",
+  };
+  const title = titles[type] || titles.help;
   const text = clip(`${title}\n👤 ${name}\n${detail || ""}`.trim(), 160);
   return {
     type: "template",
@@ -302,7 +307,7 @@ async function handleTextMessage(event) {
   } else {
     // ดึงมาร์กเกอร์ [[ALERT:booking:...]] / [[ALERT:help:...]] ออก (ลูกค้าไม่เห็น) เก็บไว้แจ้งแอดมิน
     replyText = replyText
-      .replace(/\[\[ALERT:(booking|help):([^\]]*)\]\]/gi, (_m, type, detail) => {
+      .replace(/\[\[ALERT:(booking|help|lead):([^\]]*)\]\]/gi, (_m, type, detail) => {
         alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
         return "";
       })
@@ -347,7 +352,7 @@ app.get("/selftest", async (req, res) => {
     faq.error = e && e.message ? e.message : String(e);
   }
   res.json({
-    version: "v6-welcome",
+    version: "v7-sales",
     keyCleanLen: clean.length,
     adminCount: ADMIN_USER_IDS.length,
     faq,
