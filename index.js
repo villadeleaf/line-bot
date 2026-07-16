@@ -34,6 +34,12 @@ const IMAGE_KEYS = [
   "premier-king", "family-room", "sky-riverview",
   "luxury-villa", "pool-panoramic", "pool-pet", "view",
   "package", // รูปเรทแพ็กเกจเหมา/กรุ๊ป (วันธรรมดา/เสาร์-อาทิตย์/เทศกาล)
+  "food",       // อาหารเช้า (ใบ Breakfast Selection + จานจริง)
+  "atv",        // กิจกรรม ATV
+  "raft",       // ล่องแก่ง
+  "merit",      // ตักบาตรทางเรือ (ทำบุญตอนเช้า)
+  "accessible", // ทางลาด/พื้นที่รองรับวีลแชร์-ผู้สูงอายุ
+  "nearby",     // อินโฟกราฟิก ที่เที่ยวใกล้รีสอร์ท
 ];
 
 function loadImages() {
