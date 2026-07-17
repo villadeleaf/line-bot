@@ -66,6 +66,7 @@ const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 
 // ---- ความจำการสนทนา + ความคืบหน้าการส่งรูป (ต่อคน) ----
 const conversations = new Map();
 const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
+const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
 const MAX_TURNS = 10;
 
 function nextBatch(userId, key) {
@@ -371,6 +372,14 @@ app.post(
     res.status(200).end();
     const events = req.body.events || [];
     for (const event of events) {
+      // กัน event ซ้ำ: LINE อาจส่ง webhook เดิมซ้ำ (redelivery/retry ตอน Render ตื่นจากหลับ)
+      // ถ้าไม่กัน บอทจะตอบคำถามเดียวกันซ้ำ 2-3 รอบ
+      const eid = event.webhookEventId;
+      if (eid) {
+        if (seenEvents.has(eid)) continue; // เคยเจอ event นี้แล้ว → ข้าม
+        seenEvents.add(eid);
+        if (seenEvents.size > 2000) seenEvents.clear(); // กันหน่วยความจำโตไม่จำกัด
+      }
       try {
         if (event.type === "message" && event.message.type === "text") {
           await handleTextMessage(event);
