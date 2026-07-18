@@ -14,10 +14,24 @@ const path = require("path");
 const MODEL = "claude-sonnet-5";
 
 // ---- โหลด "ความรู้" ของร้าน ----
-const knowledge = fs.readFileSync(
+let knowledge = fs.readFileSync(
   path.join(__dirname, "data", "knowledge.md"),
   "utf8"
 );
+// แยก "เมนูอาหารรายจาน (à la carte) + เครื่องดื่ม พร้อมราคา" ออกจากสมองหลัก
+//  → โหลดเฉพาะตอนลูกค้าถามเรื่องอาหาร/เมนู (ประหยัด token ทุกข้อความที่ไม่ได้ถามอาหาร)
+let menuKnowledge = "";
+{
+  const s = knowledge.indexOf("### เมนูอาหาร (à la carte)");
+  const e = knowledge.indexOf("## 👥 แพ็กเกจเหมา");
+  if (s !== -1 && e !== -1 && e > s) {
+    menuKnowledge = knowledge.slice(s, e).trim();
+    knowledge =
+      knowledge.slice(0, s) +
+      "(รีสอร์ทมีเมนูอาหารรายจาน à la carte 80+ รายการ + เครื่องดื่ม/กาแฟ/ค็อกเทล พร้อมราคา — ระบบจะแนบรายละเอียดเมนูให้อัตโนมัติเมื่อลูกค้าถามเรื่องอาหาร/เมนู)\n\n" +
+      knowledge.slice(e);
+  }
+}
 
 // ---- บุคลิกและวิธีตอบของบอท ----
 const SYSTEM_PROMPT = `คุณคือ "น้องลีฟ" 🌿 แอดมินสาวประจำรีสอร์ท Villa De Leaf River Kaeng Krachan คุยกับลูกค้าทาง LINE เหมือนคน ๆ หนึ่งจริง ๆ — สดใส เป็นกันเอง แต่สุภาพ ใส่ใจ และเป็น "พนักงานขายที่เก่งที่สุดในโลก" ที่ทำให้ลูกค้าอยากมาพักและปิดการขายได้อย่างแนบเนียน คุณเป็นทั้งเซลล์ ที่ปรึกษา และผู้แนะนำเรื่องห้องพัก อาหาร กิจกรรม และที่เที่ยว
@@ -116,6 +130,18 @@ async function generateReply(history, extraKnowledge = "") {
     { type: "text", text: currentContext() }, // วันที่ (ไม่แคช เพราะเปลี่ยนทุกวัน)
   ];
   if (extraKnowledge) system.push({ type: "text", text: extraKnowledge });
+
+  // ถ้าลูกค้าถามเรื่องอาหาร/เมนู → แนบ "เมนูรายจาน" ที่แยกออกไป (โหลดตอนถาม = ประหยัด token ข้อความอื่น ๆ)
+  const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
+  const lastText =
+    lastUserMsg && typeof lastUserMsg.content === "string" ? lastUserMsg.content : "";
+  const foodRe = /อาหาร|เมนู|à ?la ?carte|กับข้าว|ของกิน|จะกิน|อยากกิน|สั่งอาหาร|สั่งกับข้าว|หิว|เครื่องดื่ม|กาแฟ|ค็อกเทล|ม็อกเทล|เบียร์|ชาไทย|น้ำผลไม้|ปิ้งย่าง|มีอะไรกิน|กินอะไร|ราคาอาหาร|\bmenu\b|\bfood\b|\bdrink\b/i;
+  if (menuKnowledge && foodRe.test(lastText)) {
+    system.push({
+      type: "text",
+      text: "เมนูอาหาร/เครื่องดื่มรายจานพร้อมราคา (ตอบเรื่องเมนูจากนี่ได้เลย):\n" + menuKnowledge,
+    });
+  }
 
   // ลองเรียก AI ใหม่เองอีกชั้น เผื่อ API overload/สะดุด (529/429/5xx) — หน่วงเพิ่มขึ้นเรื่อย ๆ
   let response;
