@@ -11,7 +11,7 @@ const path = require("path");
 // ---- เลือกรุ่น AI ----
 //  claude-haiku-4-5  = ถูก + เร็ว (แนะนำ)
 //  claude-sonnet-5   = ฉลาดกว่า แต่แพงกว่า
-const MODEL = "claude-haiku-4-5";
+const MODEL = "claude-sonnet-5";
 
 // ---- โหลด "ความรู้" ของร้าน ----
 let knowledge = fs.readFileSync(
