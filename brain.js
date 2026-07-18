@@ -90,7 +90,7 @@ ${knowledge}`;
 //  กลางกุญแจตอน paste บน Render) — กุญแจ Anthropic มีแค่ A-Z a-z 0-9 _ - เท่านั้น
 //  ถ้าไม่ล้าง จะเจอ error "is not a legal HTTP header value"
 const API_KEY = (process.env.ANTHROPIC_API_KEY || "").replace(/[^A-Za-z0-9_-]/g, "");
-const anthropic = new Anthropic({ apiKey: API_KEY });
+const anthropic = new Anthropic({ apiKey: API_KEY, maxRetries: 4 });
 
 // ---- ข้อมูลวันที่ปัจจุบัน (ช่วยบอทคิดราคาตามฤดู/วัน) ----
 const THAI_DAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
@@ -117,12 +117,28 @@ async function generateReply(history, extraKnowledge = "") {
   ];
   if (extraKnowledge) system.push({ type: "text", text: extraKnowledge });
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 2000,
-    system,
-    messages: history,
-  });
+  // ลองเรียก AI ใหม่เองอีกชั้น เผื่อ API overload/สะดุด (529/429/5xx) — หน่วงเพิ่มขึ้นเรื่อย ๆ
+  let response;
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        system,
+        messages: history,
+      });
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      const status = err && err.status;
+      const retriable = status === 429 || status === 529 || (status >= 500 && status < 600) || err.name === "APIConnectionError";
+      if (!retriable || attempt === 2) throw err;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); // 1.5s, 3s
+    }
+  }
+  if (!response) throw lastErr;
 
   return response.content
     .filter((b) => b.type === "text")
