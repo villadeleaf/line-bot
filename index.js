@@ -67,6 +67,8 @@ const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 
 const conversations = new Map();
 const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
 const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
+// เก็บว่าข้อความแจ้งเตือนที่ส่งให้แอดมิน (messageId) = ของลูกค้าคนไหน → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ใคร
+const alertMap = new Map(); // adminAlertMessageId -> { custId, name, type, question }
 const MAX_TURNS = 10;
 
 function nextBatch(userId, key) {
@@ -150,15 +152,25 @@ function alertMessage(custId, name, type, detail) {
     booking: "🔔 ลูกค้าสนใจจอง!",
     lead: "🌟 ลูกค้าสนใจ (ยังไม่จอง) — น่าตามต่อ",
     help: "⚠️ น้องลีฟตอบไม่ได้ ขอทีมงานช่วย",
+    availability: "🏨 ลูกค้าถามห้องว่าง — รอทีมงานเช็ค",
   };
   const title = titles[type] || titles.help;
-  const text = clip(`${title}\n👤 ${name}\n${detail || ""}`.trim(), 160);
+  let text = `${title}\n👤 ${name}\n${detail || ""}`.trim();
+  // help/availability = แอดมินตอบกลับได้ (relay): กด Reply ข้อความนี้ แล้วพิมพ์คำตอบ → น้องลีฟเอาไปบอกลูกค้าให้
+  if (type === "help" || type === "availability") {
+    text += `\n\n💬 ตอบลูกค้า: กด Reply ข้อความนี้ แล้วพิมพ์คำตอบสั้น ๆ น้องลีฟจะเอาไปบอกลูกค้าให้เองค่ะ`;
+  }
+  return { type: "text", text: clip(text, 1500) };
+}
+
+// ปุ่ม "ขอคุยเอง" (แยกจากข้อความเตือน เพราะข้อความเตือนต้อง Reply ได้)
+function handoverButton(custId, name) {
   return {
     type: "template",
-    altText: `${title} — ${name}`,
+    altText: `ขอคุยเองกับ ${name}`,
     template: {
       type: "buttons",
-      text,
+      text: clip(`หรือถ้าอยากคุยเองกับ ${name} กดปุ่มด้านล่างได้เลยค่ะ`, 160),
       actions: [
         { type: "postback", label: "🙋 ขอคุยเอง", data: `handover:on:${custId}`, displayText: `ขอคุยเองกับ ${clip(name, 20)}` },
       ],
@@ -183,10 +195,17 @@ function resumeMessage(custId, name) {
 // ---- ส่งแจ้งเตือนไปหาแอดมินทุกคน ----
 async function pushAlert(custId, name, type, detail) {
   if (ADMIN_USER_IDS.length === 0) return;
-  const msg = alertMessage(custId, name, type, detail);
+  const textMsg = alertMessage(custId, name, type, detail);
+  const btnMsg = handoverButton(custId, name);
   for (const adminId of ADMIN_USER_IDS) {
     try {
-      await lineClient.pushMessage({ to: adminId, messages: [msg] });
+      const res = await lineClient.pushMessage({ to: adminId, messages: [textMsg, btnMsg] });
+      // เก็บ id ของ "ข้อความเตือน" (อันแรก) → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ลูกค้าคนไหน
+      const mid = res && res.sentMessages && res.sentMessages[0] && res.sentMessages[0].id;
+      if (mid) {
+        alertMap.set(mid, { custId, name, type, question: (detail || "").trim() });
+        if (alertMap.size > 500) alertMap.delete(alertMap.keys().next().value); // กันโตไม่จำกัด
+      }
     } catch (e) {
       console.error("pushAlert error:", e.message);
     }
@@ -275,6 +294,52 @@ async function handleTextMessage(event) {
     return;
   }
 
+  // ---- แอดมิน Reply (อ้างอิง) ข้อความแจ้งเตือน → น้องลีฟเอาคำตอบไปบอกลูกค้าให้ ----
+  const quotedId = event.message.quotedMessageId;
+  if (isAdmin && quotedId && alertMap.has(quotedId)) {
+    const target = alertMap.get(quotedId);
+    const adminAnswer = trimmed;
+    // สร้างคำตอบให้ลูกค้าในสไตล์น้องลีฟ โดยใช้ข้อมูลที่แอดมินยืนยัน (ต่อจากบทสนทนาเดิมของลูกค้า)
+    const custHistory = conversations.get(target.custId) || [];
+    const note = `[ข้อมูลที่ทีมงานเพิ่งยืนยันให้ตอบลูกค้าเรื่องที่ค้างอยู่: "${adminAnswer}"] เอาข้อมูลนี้ไปตอบลูกค้าในสไตล์น้องลีฟ (อบอุ่น กระชับ ไม่ต้องบอกว่า "ทีมงานแจ้งมา") แล้วชวนจอง/ถามต่อแบบเนียน ๆ`;
+    let relayText = "";
+    try {
+      relayText = await generateReply(custHistory, note);
+    } catch (e) {
+      console.error("relay generateReply error:", e.message);
+      relayText = adminAnswer;
+    }
+    relayText = (relayText || adminAnswer).replace(/\[\[ALERT:[^\]]*\]\]/gi, "").trim();
+    try {
+      const msgs = buildMessages(target.custId, relayText);
+      await lineClient.pushMessage({
+        to: target.custId,
+        messages: msgs.length ? msgs : [{ type: "text", text: relayText }],
+      });
+      custHistory.push({ role: "assistant", content: relayText });
+      conversations.set(target.custId, custHistory);
+    } catch (e) {
+      console.error("relay push error:", e.message);
+      await replyText1(event.replyToken, `ส่งให้ลูกค้าไม่สำเร็จค่ะ 🙏 (${e.message})`);
+      return;
+    }
+    // จำเฉพาะ "คำถามทั่วไป" — ห้องว่างเปลี่ยนตามวัน ห้ามจำ (กันบอทคิดว่าห้องว่างตลอด)
+    let note2 = "";
+    if (target.type !== "availability" && target.question) {
+      try {
+        await teachFaq(target.question, adminAnswer);
+        note2 = "\n🧠 จำไว้แล้ว ครั้งหน้าน้องลีฟตอบเองได้ค่ะ";
+      } catch (e) {
+        console.error("relay teach error:", e.message);
+      }
+    } else if (target.type === "availability") {
+      note2 = "\n(ไม่จำห้องว่าง เพราะเปลี่ยนตามวันค่ะ)";
+    }
+    alertMap.delete(quotedId);
+    await replyText1(event.replyToken, `ส่งให้ ${target.name} แล้วค่ะ ✅${note2}`);
+    return;
+  }
+
   // ---- ถ้าแอดมินขอ "คุยเอง" กับลูกค้าคนนี้อยู่ → เก็บประวัติไว้ แต่บอทเงียบ ไม่ตอบ ----
   if (!isAdmin && isPaused(userId)) {
     const h = conversations.get(userId) || [];
@@ -316,7 +381,7 @@ async function handleTextMessage(event) {
   } else {
     // ดึงมาร์กเกอร์ [[ALERT:booking:...]] / [[ALERT:help:...]] ออก (ลูกค้าไม่เห็น) เก็บไว้แจ้งแอดมิน
     replyText = replyText
-      .replace(/\[\[ALERT:(booking|help|lead):([^\]]*)\]\]/gi, (_m, type, detail) => {
+      .replace(/\[\[ALERT:(booking|help|lead|availability):([^\]]*)\]\]/gi, (_m, type, detail) => {
         alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
         return "";
       })
