@@ -156,11 +156,12 @@ function alertMessage(custId, name, type, detail) {
     lead: "🌟 ลูกค้าสนใจ (ยังไม่จอง) — น่าตามต่อ",
     help: "⚠️ น้องลีฟตอบไม่ได้ ขอทีมงานช่วย",
     availability: "🏨 ลูกค้าถามห้องว่าง — รอทีมงานเช็ค",
+    discount: "💸 ลูกค้าขอส่วนลด/ถามโปร — รอทีมงานพิจารณา",
   };
   const title = titles[type] || titles.help;
   let text = `${title}\n👤 ${name}\n${detail || ""}`.trim();
-  // help/availability = แอดมินตอบกลับได้ (relay): กด Reply ข้อความนี้ แล้วพิมพ์คำตอบ → น้องลีฟเอาไปบอกลูกค้าให้
-  if (type === "help" || type === "availability") {
+  // help/availability/discount = แอดมินตอบกลับได้ (relay): กด Reply ข้อความนี้ แล้วพิมพ์คำตอบ → น้องลีฟเอาไปบอกลูกค้าให้
+  if (type === "help" || type === "availability" || type === "discount") {
     text += `\n\n💬 ตอบลูกค้า: กด Reply ข้อความนี้ แล้วพิมพ์คำตอบสั้น ๆ น้องลีฟจะเอาไปบอกลูกค้าให้เองค่ะ`;
   }
   return { type: "text", text: clip(text, 1500) };
@@ -334,9 +335,10 @@ async function handleTextMessage(event) {
       await replyText1(event.replyToken, `ส่งให้ลูกค้าไม่สำเร็จค่ะ 🙏 (${e.message})`);
       return;
     }
-    // จำเฉพาะ "คำถามทั่วไป" — ห้องว่างเปลี่ยนตามวัน ห้ามจำ (กันบอทคิดว่าห้องว่างตลอด)
+    // จำเฉพาะ "คำถามทั่วไป" — ห้องว่าง (เปลี่ยนตามวัน) + ส่วนลด/โปร (ให้เป็นรายคน) ห้ามจำ
     let note2 = "";
-    if (target.type !== "availability" && target.question) {
+    const noRemember = target.type === "availability" || target.type === "discount";
+    if (!noRemember && target.question) {
       try {
         await teachFaq(target.question, adminAnswer);
         note2 = "\n🧠 จำไว้แล้ว ครั้งหน้าน้องลีฟตอบเองได้ค่ะ";
@@ -345,6 +347,8 @@ async function handleTextMessage(event) {
       }
     } else if (target.type === "availability") {
       note2 = "\n(ไม่จำห้องว่าง เพราะเปลี่ยนตามวันค่ะ)";
+    } else if (target.type === "discount") {
+      note2 = "\n(ไม่จำส่วนลด/โปร เพราะให้เป็นรายคนค่ะ)";
     }
     alertMap.delete(quotedId);
     await replyText1(event.replyToken, `ส่งให้ ${target.name} แล้วค่ะ ✅${note2}`);
@@ -392,7 +396,7 @@ async function handleTextMessage(event) {
   } else {
     // ดึงมาร์กเกอร์ [[ALERT:booking:...]] / [[ALERT:help:...]] ออก (ลูกค้าไม่เห็น) เก็บไว้แจ้งแอดมิน
     replyText = replyText
-      .replace(/\[\[ALERT:(booking|help|lead|availability):([^\]]*)\]\]/gi, (_m, type, detail) => {
+      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]\]/gi, (_m, type, detail) => {
         alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
         return "";
       })
