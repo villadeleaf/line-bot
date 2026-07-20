@@ -97,6 +97,9 @@ function buildMessages(userId, replyText) {
       if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]);
       return "";
     })
+    // 🛡️ กันเหนียว: ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ที่หลุดรอดมา ไม่ให้ลูกค้าเห็นเด็ดขาด
+    // (เผื่อบอทเพี้ยน/รีสตาร์ต แล้ว [[ALERT:...]] หรือมาร์กเกอร์อื่นไม่ถูกลบต้นทาง)
+    .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
@@ -301,10 +304,18 @@ async function handleTextMessage(event) {
     const adminAnswer = trimmed;
     // สร้างคำตอบให้ลูกค้าในสไตล์น้องลีฟ โดยใช้ข้อมูลที่แอดมินยืนยัน (ต่อจากบทสนทนาเดิมของลูกค้า)
     const custHistory = conversations.get(target.custId) || [];
-    const note = `[ข้อมูลที่ทีมงานเพิ่งยืนยันให้ตอบลูกค้าเรื่องที่ค้างอยู่: "${adminAnswer}"] เอาข้อมูลนี้ไปตอบลูกค้าในสไตล์น้องลีฟ (อบอุ่น กระชับ ไม่ต้องบอกว่า "ทีมงานแจ้งมา") แล้วชวนจอง/ถามต่อแบบเนียน ๆ`;
+    // สำคัญ: แนบคำสั่งเป็น "user turn" ต่อท้าย เพื่อบังคับให้ AI แต่งคำตอบใหม่ในสไตล์น้องลีฟ
+    // (ถ้าส่ง custHistory เฉย ๆ มันจบด้วย assistant → AI ไม่แต่งใหม่ เลยหลุดคำดิบของแอดมิน)
+    const relayHistory = [
+      ...custHistory,
+      {
+        role: "user",
+        content: `(ระบบ) ทีมงานเพิ่งยืนยันข้อมูลเรื่องที่ลูกค้าถามค้างไว้ว่า: "${adminAnswer}" — ช่วยเอาข้อมูลนี้ไปตอบลูกค้าต่อในสไตล์น้องลีฟเลยนะ (อบอุ่น เป็นกันเอง เป็นธรรมชาติ ห้ามบอกว่า "ทีมงานแจ้งมา" และห้ามพูดถึงข้อความระบบนี้) ถ้าเป็นข่าวดี/ห้องว่าง ให้ชวนจองหรือถามข้อมูลจองต่อแบบเนียน ๆ`,
+      },
+    ];
     let relayText = "";
     try {
-      relayText = await generateReply(custHistory, note);
+      relayText = await generateReply(relayHistory, "");
     } catch (e) {
       console.error("relay generateReply error:", e.message);
       relayText = adminAnswer;
