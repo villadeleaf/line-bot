@@ -447,12 +447,39 @@ app.get("/selftest", async (req, res) => {
     faq,
   });
 });
-app.post(
-  "/webhook",
-  line.middleware({ channelSecret: LINE_CHANNEL_SECRET }),
-  async (req, res) => {
-    res.status(200).end();
-    const events = req.body.events || [];
+// ---- ส่งสำเนา event ต่อเข้าระบบหัวหน้า (เปิดใช้เมื่อใส่ LINE_FORWARD_URL เท่านั้น) ----
+//  ส่ง raw body + ลายเซ็นเดิม → ระบบหัวหน้าตรวจลายเซ็นด้วย channel secret ตัวเดียวกันได้เลย
+//  ทำแบบ fire-and-forget (ไม่รอผล) เพื่อไม่ให้กระทบความเร็วการตอบลูกค้า
+const FORWARD_URL = (process.env.LINE_FORWARD_URL || "").trim();
+function forwardToBackend(rawBody, signature) {
+  if (!FORWARD_URL) return; // ปิดไว้ถ้ายังไม่ได้ตั้งค่า
+  fetch(FORWARD_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-line-signature": signature || "" },
+    body: rawBody,
+  }).catch((e) => console.error("forward error:", e.message));
+}
+
+app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
+  const signature = req.headers["x-line-signature"];
+  const rawBody = req.body; // Buffer (จาก express.raw)
+  // ตรวจลายเซ็น LINE เอง (แทน line.middleware) เพื่อเก็บ rawBody ไว้ส่งต่อระบบหัวหน้าได้
+  if (!signature || !Buffer.isBuffer(rawBody) || !line.validateSignature(rawBody, LINE_CHANNEL_SECRET, signature)) {
+    return res.status(401).end();
+  }
+  res.status(200).end(); // ตอบ LINE เร็ว ๆ ก่อน
+
+  forwardToBackend(rawBody, signature); // ส่งสำเนาต่อให้ระบบหัวหน้า (ถ้าตั้งค่าไว้)
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawBody.toString("utf8"));
+  } catch (e) {
+    console.error("webhook parse error:", e.message);
+    return;
+  }
+  const events = parsed.events || [];
+  (async () => {
     for (const event of events) {
       // กัน event ซ้ำ: LINE อาจส่ง webhook เดิมซ้ำ (redelivery/retry ตอน Render ตื่นจากหลับ)
       // ถ้าไม่กัน บอทจะตอบคำถามเดียวกันซ้ำ 2-3 รอบ
@@ -474,8 +501,8 @@ app.post(
         console.error("Handle error:", err);
       }
     }
-  }
-);
+  })();
+});
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Bot listening on port ${port}`));
