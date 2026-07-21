@@ -447,6 +447,45 @@ app.get("/selftest", async (req, res) => {
     faq,
   });
 });
+// ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
+//  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}
+//  น้องลีฟจำบทสนทนาต่อเนื่องด้วย userId (ใช้ conversations Map เดียวกับ LINE)
+const ASK_SECRET = (process.env.ASK_SECRET || "").trim();
+app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
+  if (!ASK_SECRET || (req.headers["x-nong-secret"] || "") !== ASK_SECRET) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const { userId, message } = req.body || {};
+  if (!userId || !message) {
+    return res.status(400).json({ error: "userId and message required" });
+  }
+  let history = conversations.get(userId) || [];
+  history.push({ role: "user", content: String(message) });
+  if (history.length > MAX_TURNS * 2) history = history.slice(-MAX_TURNS * 2);
+
+  let extra = "";
+  try {
+    if (faqEnabled()) extra = faqText(await loadFaq());
+  } catch (e) {
+    console.error("ask loadFaq error:", e.message);
+  }
+
+  let replyText;
+  try {
+    replyText = await generateReply(history, extra);
+  } catch (e) {
+    console.error("ask error:", e.message);
+    return res.status(200).json({ reply: "" }); // ให้ระบบหัวหน้า fallback เป็นคนตอบ
+  }
+  // ตอบกลับเป็นข้อความล้วน — ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ออก (ลูกค้าไม่เห็น)
+  const clean = (replyText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (clean) {
+    history.push({ role: "assistant", content: clean });
+    conversations.set(userId, history);
+  }
+  res.json({ reply: clean });
+});
+
 // ---- ส่งสำเนา event ต่อเข้าระบบหัวหน้า (เปิดใช้เมื่อใส่ LINE_FORWARD_URL เท่านั้น) ----
 //  ส่ง raw body + ลายเซ็นเดิม → ระบบหัวหน้าตรวจลายเซ็นด้วย channel secret ตัวเดียวกันได้เลย
 //  ทำแบบ fire-and-forget (ไม่รอผล) เพื่อไม่ให้กระทบความเร็วการตอบลูกค้า
