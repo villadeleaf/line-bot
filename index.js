@@ -8,7 +8,7 @@ const express = require("express");
 const line = require("@line/bot-sdk");
 const path = require("path");
 const fs = require("fs");
-const { generateReply } = require("./brain");
+const { generateReply, generateFbReply } = require("./brain");
 const { faqEnabled, loadFaq, teachFaq, faqText } = require("./faq");
 
 // LINE userId ของแอดมินที่สอนบอทได้ (คั่นด้วยจุลภาค) เช่น "U123...,U456..."
@@ -477,11 +477,66 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     console.error("ask error:", e.message);
     return res.status(200).json({ reply: "" }); // ให้ระบบหัวหน้า fallback เป็นคนตอบ
   }
+
+  // ถ้าน้องลีฟเจอเคสที่ต้องให้คนดู (จอง/ห้องว่าง/ส่วนลด/ตอบไม่ได้) → เด้งเตือนแอดมินทาง LINE ส่วนตัว
+  //   (ผ่าน OA ที่น้องลีฟคุมเอง — คุณตอบลูกค้าในระบบหัวหน้า ส่วนแจ้งเตือนเด้งเข้า LINE คุณเอง)
+  try {
+    const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount):([^\]]*)\]\]/i);
+    if (m && ADMIN_USER_IDS.length) {
+      const t = m[1].toLowerCase();
+      const titles = {
+        booking: "🔔 ลูกค้าสนใจจอง",
+        help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
+        availability: "🏨 ลูกค้าถามห้องว่าง",
+        discount: "💸 ลูกค้าขอส่วนลด/โปร",
+      };
+      const custName = String(req.body.name || "ลูกค้า").trim();
+      const alertText = `${titles[t] || titles.help}\n👤 ${custName}\n${(m[2] || "").trim()}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
+      for (const admin of ADMIN_USER_IDS) {
+        lineClient
+          .pushMessage({ to: admin, messages: [{ type: "text", text: alertText }] })
+          .catch((e) => console.error("ask alert push:", e.message));
+      }
+    }
+  } catch (e) {
+    console.error("ask alert error:", e.message);
+  }
+
   // ตอบกลับเป็นข้อความล้วน — ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ออก (ลูกค้าไม่เห็น)
   const clean = (replyText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (clean) {
     history.push({ role: "assistant", content: clean });
     conversations.set(userId, history);
+  }
+  res.json({ reply: clean });
+});
+
+// ---- น้องลีฟเวอร์ชันเบาสำหรับ Facebook/Instagram: ตอบสั้น + ลากเข้า LINE ----
+//  ยิง POST /ask-fb {userId, message} + header x-nong-secret → ได้ {reply} (สั้น + ชวนแอดไลน์)
+app.post("/ask-fb", express.json({ limit: "256kb" }), async (req, res) => {
+  if (!ASK_SECRET || (req.headers["x-nong-secret"] || "") !== ASK_SECRET) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const { userId, message } = req.body || {};
+  if (!userId || !message) {
+    return res.status(400).json({ error: "userId and message required" });
+  }
+  const key = "fb:" + userId; // แยก namespace กัน FB ชนกับ LINE
+  let history = conversations.get(key) || [];
+  history.push({ role: "user", content: String(message) });
+  if (history.length > MAX_TURNS * 2) history = history.slice(-MAX_TURNS * 2);
+
+  let replyText;
+  try {
+    replyText = await generateFbReply(history);
+  } catch (e) {
+    console.error("ask-fb error:", e.message);
+    return res.status(200).json({ reply: "" }); // ให้ระบบต้นทาง fallback เป็นคน
+  }
+  const clean = (replyText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (clean) {
+    history.push({ role: "assistant", content: clean });
+    conversations.set(key, history);
   }
   res.json({ reply: clean });
 });

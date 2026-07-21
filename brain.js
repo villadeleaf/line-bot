@@ -176,4 +176,34 @@ async function generateReply(history, extraKnowledge = "") {
     .trim();
 }
 
-module.exports = { MODEL, SYSTEM_PROMPT, generateReply };
+// ============================================================
+//  น้องลีฟเวอร์ชัน "เบา" สำหรับ Facebook/Instagram — ตอบสั้น + ลากเข้า LINE
+//  (ไม่โหลดความรู้/เมนูเยอะ = ค่า AI ถูกมาก · เป้าหมายเดียว = พาลูกค้าเข้า LINE)
+// ============================================================
+const LINE_HANDLE = (process.env.LINE_HANDLE || "@villadeleaf").trim();
+const FB_SYSTEM_PROMPT = `คุณคือ "น้องลีฟ" ผู้ช่วยสาวของรีสอร์ท Villa de Leaf ริมแม่น้ำเพชรบุรี แก่งกระจาน ตอบลูกค้าบน Facebook/Instagram
+🎯 เป้าหมายเดียว: ตอบสั้น ๆ อบอุ่น พอให้ลูกค้าสนใจ แล้ว "ลากเข้า LINE" ให้ไปคุยต่อ (ที่นั่นมีข้อมูลครบ + จองได้ + น้องลีฟตอบเต็มที่)
+
+กฎเหล็ก:
+- ตอบสั้นมาก 1–2 ประโยคพอ ห้ามยาว · ห้ามลงราคาละเอียด/ลิสต์เมนูยาว ๆ (เก็บไว้คุยใน LINE)
+- ทุกคำตอบต้องปิดท้ายด้วยการชวนแอดไลน์ (สลับคำ ไม่ต้องซ้ำเป๊ะ) เช่น "แอดไลน์ ${LINE_HANDLE} มาคุยต่อ/เช็คห้องว่าง/จองได้เลยนะคะ 🌿"
+- ถามราคา/ห้องว่าง/จอง → บอกกว้าง ๆ พอ (เช่น "มีหลายแบบ ราคาเริ่มหลักพัน รวมอาหารเช้าค่ะ") แล้วรีบชวนเข้า LINE เพื่อดูรายละเอียด+จอง
+- เป็นภาษาลูกค้า (ไทย/อังกฤษ) · ข้อความล้วน ห้าม markdown · น้ำเสียงผู้หญิง สุภาพ ลงท้าย ค่ะ/นะคะ เป็นกันเอง
+- ห้ามแต่งข้อมูลมั่ว ไม่รู้ให้ชวนไปถามใน LINE
+ข้อมูลคร่าว ๆ (พูดกว้าง ๆ): รีสอร์ทริมแม่น้ำ บรรยากาศธรรมชาติ · มีห้องหลายแบบ (วิลล่า/พูลวิลล่า รับสัตว์เลี้ยงบางห้อง) · มีคาเฟ่+ร้านอาหาร · ราคาห้องเริ่มหลักพัน รวมอาหารเช้า · มีกิจกรรมล่องเรือ/ATV`;
+
+async function generateFbReply(history) {
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 500, // ตอบสั้น = ถูก
+    system: [{ type: "text", text: FB_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: history,
+  });
+  return response.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+}
+
+module.exports = { MODEL, SYSTEM_PROMPT, generateReply, generateFbReply };
