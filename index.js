@@ -483,7 +483,21 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
       custHistory.push({ role: "assistant", content: relayClean });
       conversations.set(userId, custHistory);
     }
-    return res.json({ reply: relayClean });
+    // จำอัตโนมัติ (เหมือน relay เก่า): จำ "คำถามทั่วไป" ลง Google Sheet เดิม — ไม่จำห้องว่าง/ส่วนลด (เปลี่ยนตามวัน/รายคน)
+    //   ระบบเฮียส่ง type + question (ที่ได้จากตอน needsHuman) มาด้วย น้องลีฟจะได้รู้ว่าอันไหนควรจำ
+    let remembered = false;
+    const askType = String(req.body.type || "").toLowerCase();
+    const askQuestion = String(req.body.question || "").trim();
+    const noRemember = askType === "availability" || askType === "discount";
+    if (!noRemember && askQuestion) {
+      try {
+        await teachFaq(askQuestion, String(message));
+        remembered = true;
+      } catch (e) {
+        console.error("ask fromAdmin teach error:", e.message);
+      }
+    }
+    return res.json({ reply: relayClean, remembered });
   }
 
   let history = conversations.get(userId) || [];
