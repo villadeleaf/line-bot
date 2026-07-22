@@ -463,6 +463,29 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
   //   ระบบเฮียยิง { fromAdmin:true, userId:<ไอดีลูกค้า>, message:<คำตอบดิบของทีม> } → ได้ { reply } กลับไปส่งลูกค้าจริง
   if (fromAdmin) {
+    // ---- พิมพ์ "#สอน คำถาม | คำตอบ" ในกล่องเขียวได้เลย → สอนน้องลีฟตรง ๆ (ไม่ส่งหาลูกค้า) ----
+    //   ตอบกลับมี taught:true → ระบบเฮียโชว์ note ให้ทีม และ "ห้ามส่งข้อความนี้หาลูกค้า"
+    const fromAdminMsg = String(message).trim();
+    if (fromAdminMsg.startsWith("#สอน")) {
+      const body = fromAdminMsg.replace(/^#สอน\s*/, "");
+      const idx = body.indexOf("|");
+      if (idx === -1) {
+        return res.status(200).json({ reply: "", taught: false, note: "พิมพ์แบบนี้นะคะ:\n#สอน คำถาม | คำตอบ" });
+      }
+      const q = body.slice(0, idx).trim();
+      const a = body.slice(idx + 1).trim();
+      if (!q || !a) {
+        return res.status(200).json({ reply: "", taught: false, note: "ใส่ทั้งคำถามและคำตอบด้วยนะคะ 🙏\n#สอน คำถาม | คำตอบ" });
+      }
+      try {
+        await teachFaq(q, a);
+        return res.status(200).json({ reply: "", taught: true, note: `จำแล้วค่ะ ✅\nถาม: ${q}\nตอบ: ${a}\n\nครั้งหน้าลูกค้าถามเรื่องนี้ น้องลีฟตอบเองได้เลยค่ะ 😊` });
+      } catch (e) {
+        console.error("ask fromAdmin teach error:", e.message);
+        return res.status(200).json({ reply: "", taught: false, note: `บันทึกไม่สำเร็จค่ะ 🙏 (${e.message})` });
+      }
+    }
+
     const custHistory = conversations.get(userId) || [];
     const relayHistory = [
       ...custHistory,
