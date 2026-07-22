@@ -8,7 +8,7 @@ const express = require("express");
 const line = require("@line/bot-sdk");
 const path = require("path");
 const fs = require("fs");
-const { generateReply, generateFbReply } = require("./brain");
+const { generateReply, generateFbReply, extractTeaching } = require("./brain");
 const { faqEnabled, loadFaq, teachFaq, faqText } = require("./faq");
 
 // LINE userId ของแอดมินที่สอนบอทได้ (คั่นด้วยจุลภาค) เช่น "U123...,U456..."
@@ -298,6 +298,24 @@ async function handleTextMessage(event) {
     return;
   }
 
+  // ---- โหมดคุยสอนแบบธรรมชาติ: แอดมินพิมพ์ "จำไว้นะว่า..." → น้องลีฟสกัด+จำเอง (ไม่ต้องใช้ #สอน / |) ----
+  if (isAdmin && /จำ|อัปเดต|อัพเดต|บันทึก|ต่อไปนี้|ให้จำ|สอนน้องลีฟ|แก้ข้อมูล|เปลี่ยนเป็น/.test(trimmed)) {
+    try {
+      const t = await extractTeaching(trimmed);
+      if (t.isTeach) {
+        await teachFaq(t.question, t.answer);
+        await replyText1(
+          event.replyToken,
+          `จำแล้วค่ะ ✅\nถาม: ${t.question}\nตอบ: ${t.answer}\n\nครั้งหน้าลูกค้าถามเรื่องนี้ น้องลีฟตอบเองได้เลยค่ะ 😊 (อยากแก้ พิมพ์บอกใหม่ได้เลย)`
+        );
+        return;
+      }
+    } catch (e) {
+      console.error("natural teach error:", e.message);
+    }
+    // ถ้าไม่ใช่การสอน → ตกไปที่โฟลว์ปกติ (ตอบตามบุคลิก)
+  }
+
   // ---- แอดมิน Reply (อ้างอิง) ข้อความแจ้งเตือน → น้องลีฟเอาคำตอบไปบอกลูกค้าให้ ----
   const quotedId = event.message.quotedMessageId;
   if (isAdmin && quotedId && alertMap.has(quotedId)) {
@@ -466,6 +484,32 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     // ---- พิมพ์ "#สอน คำถาม | คำตอบ" ในกล่องเขียวได้เลย → สอนน้องลีฟตรง ๆ (ไม่ส่งหาลูกค้า) ----
     //   ตอบกลับมี taught:true → ระบบเฮียโชว์ note ให้ทีม และ "ห้ามส่งข้อความนี้หาลูกค้า"
     const fromAdminMsg = String(message).trim();
+
+    // ---- กล่องสอนน้องลีฟ (โหมดคุยธรรมชาติ): ระบบเฮียส่ง { fromAdmin:true, teach:true, message:"<คุยธรรมดา>" } ----
+    //   น้องลีฟสกัดเป็นคำถาม/คำตอบเอง (ไม่ต้องมี #สอน หรือ |) แล้วจำลง Google Sheet เดิม
+    if (req.body.teach === true) {
+      let q = "", a = "";
+      try {
+        if (fromAdminMsg.startsWith("#สอน") && fromAdminMsg.includes("|")) {
+          const body = fromAdminMsg.replace(/^#สอน\s*/, "");
+          const idx = body.indexOf("|");
+          q = body.slice(0, idx).trim();
+          a = body.slice(idx + 1).trim();
+        } else {
+          const t = await extractTeaching(fromAdminMsg);
+          if (t.isTeach) { q = t.question; a = t.answer; }
+        }
+        if (q && a) {
+          await teachFaq(q, a);
+          return res.status(200).json({ reply: "", taught: true, note: `จำแล้วค่ะ ✅\nถาม: ${q}\nตอบ: ${a}` });
+        }
+        return res.status(200).json({ reply: "", taught: false, note: 'ยังไม่แน่ใจว่าจะให้จำอะไรค่ะ ลองพิมพ์ใหม่ เช่น "ที่จอดรถมี 20 คัน จอดฟรี"' });
+      } catch (e) {
+        console.error("teach box error:", e.message);
+        return res.status(200).json({ reply: "", taught: false, note: `บันทึกไม่สำเร็จค่ะ 🙏 (${e.message})` });
+      }
+    }
+
     if (fromAdminMsg.startsWith("#สอน")) {
       const body = fromAdminMsg.replace(/^#สอน\s*/, "");
       const idx = body.indexOf("|");

@@ -206,4 +206,41 @@ async function generateFbReply(history) {
     .trim();
 }
 
-module.exports = { MODEL, SYSTEM_PROMPT, generateReply, generateFbReply };
+// ============================================================
+//  โหมดคุยสอนแบบธรรมชาติ — แอดมินพิมพ์คุยธรรมดา ("จำไว้นะว่า...")
+//  → AI ตัดสินว่าเป็นการสอนไหม + สกัดเป็น {question, answer} (ไม่ต้องมี syntax #สอน / |)
+// ============================================================
+async function extractTeaching(message) {
+  const sys = `คุณเป็นผู้ช่วยที่ช่วย "แอดมินรีสอร์ท" สอนข้อมูลให้แชทบอท "น้องลีฟ"
+แอดมินพิมพ์ข้อความมา 1 ข้อความ หน้าที่คุณคือตัดสินว่าเขากำลัง "สอน/อัปเดตข้อมูลข้อเท็จจริง" ให้บอทจำหรือไม่
+
+ถ้าใช่ (เช่น "จำไว้นะ ที่จอดรถมี 20 คัน จอดฟรี", "อัปเดตค่านวดเป็น 800", "ต่อไปถ้าลูกค้าถามเรื่อง X ให้ตอบว่า Y") ให้สกัดเป็นคู่:
+- question = คำถามที่ลูกค้าน่าจะถาม (สั้น กระชับ เป็นธรรมชาติ)
+- answer = คำตอบ/ข้อเท็จจริงที่จะให้น้องลีฟใช้ตอบ (สุภาพ ลงท้าย ค่ะ)
+
+ถ้าไม่ใช่การสอน (เช่น ถามคำถาม สั่งงานอื่น คุยเล่น ทักทาย) ให้ isTeach เป็น false
+
+ตอบเป็น JSON บรรทัดเดียวเท่านั้น ห้ามมีข้อความอื่นประกอบ:
+{"isTeach": true, "question": "...", "answer": "..."}
+หรือ
+{"isTeach": false}`;
+  const response = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: [{ type: "text", text: sys, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: String(message) }],
+  });
+  const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    const obj = JSON.parse(m ? m[0] : text);
+    if (obj && obj.isTeach && obj.question && obj.answer) {
+      return { isTeach: true, question: String(obj.question).trim(), answer: String(obj.answer).trim() };
+    }
+  } catch (e) {
+    console.error("extractTeaching parse:", e.message, "| raw:", text.slice(0, 120));
+  }
+  return { isTeach: false };
+}
+
+module.exports = { MODEL, SYSTEM_PROMPT, generateReply, generateFbReply, extractTeaching };
