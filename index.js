@@ -502,27 +502,36 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     replyText = await generateReply(history, extra);
   } catch (e) {
     console.error("ask error:", e.message);
-    return res.status(200).json({ reply: "" }); // ให้ระบบหัวหน้า fallback เป็นคนตอบ
+    // AI ขัดข้อง → บอกระบบเฮียให้เด้งกล่องเขียว (needsHuman) + fallback เป็นคนตอบ
+    return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "ระบบ AI ขัดข้องชั่วคราว รบกวนทีมงานเข้าไปดูแลลูกค้าต่อค่ะ" });
   }
 
-  // ถ้าน้องลีฟเจอเคสที่ต้องให้คนดู (จอง/ห้องว่าง/ส่วนลด/ตอบไม่ได้) → เด้งเตือนแอดมินทาง LINE ส่วนตัว
-  //   (ผ่าน OA ที่น้องลีฟคุมเอง — คุณตอบลูกค้าในระบบหัวหน้า ส่วนแจ้งเตือนเด้งเข้า LINE คุณเอง)
+  // ถ้าน้องลีฟเจอเคสที่ต้องให้คนดู (จอง/ห้องว่าง/ส่วนลด/ตอบไม่ได้):
+  //   (1) ส่ง needsHuman + type กลับ → ระบบเฮียเด้งเคสนี้ขึ้น "กล่องเขียวแชทน้องลีฟ"
+  //   (2) เด้งเข้า LINE ส่วนตัวแอดมินด้วย (ตัวสำรอง ระหว่างที่ระบบเฮียยังต่อกล่องเขียวไม่เสร็จ)
+  let needsHuman = false;
+  let alertType = null;
+  let alertDetail = "";
   try {
     const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount):([^\]]*)\]\]/i);
-    if (m && ADMIN_USER_IDS.length) {
-      const t = m[1].toLowerCase();
-      const titles = {
-        booking: "🔔 ลูกค้าสนใจจอง",
-        help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
-        availability: "🏨 ลูกค้าถามห้องว่าง",
-        discount: "💸 ลูกค้าขอส่วนลด/โปร",
-      };
-      const custName = String(req.body.name || "ลูกค้า").trim();
-      const alertText = `${titles[t] || titles.help}\n👤 ${custName}\n${(m[2] || "").trim()}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
-      for (const admin of ADMIN_USER_IDS) {
-        lineClient
-          .pushMessage({ to: admin, messages: [{ type: "text", text: alertText }] })
-          .catch((e) => console.error("ask alert push:", e.message));
+    if (m) {
+      needsHuman = true;
+      alertType = m[1].toLowerCase();
+      alertDetail = (m[2] || "").trim();
+      if (ADMIN_USER_IDS.length) {
+        const titles = {
+          booking: "🔔 ลูกค้าสนใจจอง",
+          help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
+          availability: "🏨 ลูกค้าถามห้องว่าง",
+          discount: "💸 ลูกค้าขอส่วนลด/โปร",
+        };
+        const custName = String(req.body.name || "ลูกค้า").trim();
+        const alertText = `${titles[alertType] || titles.help}\n👤 ${custName}\n${alertDetail}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
+        for (const admin of ADMIN_USER_IDS) {
+          lineClient
+            .pushMessage({ to: admin, messages: [{ type: "text", text: alertText }] })
+            .catch((e) => console.error("ask alert push:", e.message));
+        }
       }
     }
   } catch (e) {
@@ -535,7 +544,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     history.push({ role: "assistant", content: clean });
     conversations.set(userId, history);
   }
-  res.json({ reply: clean });
+  //  needsHuman=true + type → บอกระบบเฮียให้เด้งเคสนี้ขึ้นกล่องเขียวให้ทีมเข้ามาช่วย
+  res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail });
 });
 
 // ---- น้องลีฟเวอร์ชันเบาสำหรับ Facebook/Instagram: ตอบสั้น + ลากเข้า LINE ----
