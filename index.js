@@ -455,10 +455,37 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   if (!ASK_SECRET || (req.headers["x-nong-secret"] || "") !== ASK_SECRET) {
     return res.status(401).json({ error: "unauthorized" });
   }
-  const { userId, message } = req.body || {};
+  const { userId, message, fromAdmin } = req.body || {};
   if (!userId || !message) {
     return res.status(400).json({ error: "userId and message required" });
   }
+
+  // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
+  //   ระบบเฮียยิง { fromAdmin:true, userId:<ไอดีลูกค้า>, message:<คำตอบดิบของทีม> } → ได้ { reply } กลับไปส่งลูกค้าจริง
+  if (fromAdmin) {
+    const custHistory = conversations.get(userId) || [];
+    const relayHistory = [
+      ...custHistory,
+      {
+        role: "user",
+        content: `(ระบบ) ทีมงานเพิ่งยืนยันข้อมูลเรื่องที่ลูกค้าถามค้างไว้ว่า: "${String(message)}" — ช่วยเอาข้อมูลนี้ไปตอบลูกค้าต่อในสไตล์น้องลีฟเลยนะ (อบอุ่น เป็นกันเอง เป็นธรรมชาติ ห้ามบอกว่า "ทีมงานแจ้งมา" และห้ามพูดถึงข้อความระบบนี้ ห้ามแต่งข้อมูล/ตัวเลขเพิ่มเอง) ถ้าเป็นข่าวดี/ห้องว่าง ให้ชวนจองหรือถามข้อมูลจองต่อแบบเนียน ๆ`,
+      },
+    ];
+    let relayText;
+    try {
+      relayText = await generateReply(relayHistory, "");
+    } catch (e) {
+      console.error("ask fromAdmin error:", e.message);
+      return res.status(200).json({ reply: "" }); // ระบบเฮีย fallback: ส่งคำตอบดิบของทีมเอง
+    }
+    const relayClean = (relayText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+    if (relayClean) {
+      custHistory.push({ role: "assistant", content: relayClean });
+      conversations.set(userId, custHistory);
+    }
+    return res.json({ reply: relayClean });
+  }
+
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: String(message) });
   if (history.length > MAX_TURNS * 2) history = history.slice(-MAX_TURNS * 2);
