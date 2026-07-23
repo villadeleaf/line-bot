@@ -69,7 +69,7 @@ const imgProgress = new Map(); // userId -> { key: จำนวนที่ส�
 const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
 // เก็บว่าข้อความแจ้งเตือนที่ส่งให้แอดมิน (messageId) = ของลูกค้าคนไหน → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ใคร
 const alertMap = new Map(); // adminAlertMessageId -> { custId, name, type, question }
-const MAX_TURNS = 10;
+const MAX_TURNS = 20; // ความจำบทสนทนา 20 เทิร์น (40 ข้อความ) — บทสนทนาจองยาว ๆ ข้อมูลต้นแชทไม่หลุด (เดิม 10 สั้นไป ทำให้บอทถามซ้ำ)
 
 function nextBatch(userId, key) {
   const files = IMAGES[key] || [];
