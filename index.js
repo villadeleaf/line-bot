@@ -113,6 +113,17 @@ function buildMessages(userId, replyText) {
   return messages.slice(0, 5); // LINE จำกัด 5 ข้อความต่อการตอบ 1 ครั้ง
 }
 
+// ---- ดึง URL รูปจากมาร์กเกอร์ [[IMG:...]] ในคำตอบ → ให้ /ask ส่ง images ไปให้ระบบเฮียส่งรูปเอง ----
+//   (ระบบเฮียเอา url ในลิสต์ไปสร้าง LINE image message เอง · สูงสุด 4 รูป = ข้อความ+4รูป = ลิมิต LINE)
+function extractImageUrls(userId, replyText) {
+  if (!PUBLIC_URL) return [];
+  const files = [];
+  (replyText || "")
+    .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => { if (IMAGES[k]) files.push(...nextBatch(userId, k)); return ""; })
+    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => { if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]); return ""; });
+  return files.slice(0, 4).map((f) => `${PUBLIC_URL}/images/${encodeURIComponent(f)}`);
+}
+
 // ตอบกลับข้อความเดียวสั้น ๆ (ใช้กับคำสั่งแอดมิน)
 async function replyText1(replyToken, text) {
   await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text }] });
@@ -564,7 +575,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
         console.error("ask fromAdmin teach error:", e.message);
       }
     }
-    return res.json({ reply: relayClean, remembered });
+    const relayImages = extractImageUrls(userId, relayText);
+    return res.json({ reply: relayClean, remembered, images: relayImages });
   }
 
   let history = conversations.get(userId) || [];
@@ -599,7 +611,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
       needsHuman = true;
       alertType = m[1].toLowerCase();
       alertDetail = (m[2] || "").trim();
-      if (ADMIN_USER_IDS.length) {
+      // โหมดทดสอบ (test:true) → ไม่เด้งเตือนแอดมิน (ทดสอบเงียบ ๆ) แต่ยังส่ง needsHuman กลับให้ดู
+      if (ADMIN_USER_IDS.length && !req.body.test) {
         const titles = {
           booking: "🔔 ลูกค้าสนใจจอง",
           help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
@@ -625,8 +638,10 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     history.push({ role: "assistant", content: clean });
     conversations.set(userId, history);
   }
+  //  images → รูปที่น้องลีฟอยากส่ง (ระบบเฮียเอา url ไปส่งเป็น LINE image message)
+  const images = extractImageUrls(userId, replyText);
   //  needsHuman=true + type → บอกระบบเฮียให้เด้งเคสนี้ขึ้นกล่องเขียวให้ทีมเข้ามาช่วย
-  res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail });
+  res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail, images });
 });
 
 // ---- น้องลีฟเวอร์ชันเบาสำหรับ Facebook/Instagram: ตอบสั้น + ลากเข้า LINE ----
