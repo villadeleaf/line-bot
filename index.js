@@ -8,7 +8,27 @@ const express = require("express");
 const line = require("@line/bot-sdk");
 const path = require("path");
 const fs = require("fs");
-const { generateReply, generateFbReply, extractTeaching } = require("./brain");
+const { generateReply, generateFbReply, extractTeaching, extractAvailabilityQuery } = require("./brain");
+
+// ---- Phase 3: เช็คห้องว่างเรียลไทม์จากระบบเฮีย (อ่านอย่างเดียว) ----
+//  ทำงานเมื่อตั้ง AVAIL_API_KEY เท่านั้น — ไม่ตั้ง = พฤติกรรมเดิมทุกอย่าง (ส่งทีมเช็ค)
+const AVAIL_API_URL = (process.env.AVAIL_API_URL || "https://backend.villadeleaf.online/api/availability").trim();
+const AVAIL_API_KEY = (process.env.AVAIL_API_KEY || "").trim();
+
+async function fetchAvailability(checkin, checkout) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(`${AVAIL_API_URL}?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}`, {
+      headers: { "x-api-key": AVAIL_API_KEY },
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
 const { faqEnabled, loadFaq, teachFaq, faqText } = require("./faq");
 
 // LINE userId ของแอดมินที่สอนบอทได้ (คั่นด้วยจุลภาค) เช่น "U123...,U456..."
@@ -588,6 +608,27 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     if (faqEnabled()) extra = faqText(await loadFaq());
   } catch (e) {
     console.error("ask loadFaq error:", e.message);
+  }
+
+  // ---- Phase 3: ลูกค้าถามห้องว่าง/จะจอง → เช็คปฏิทินจริงจากระบบเฮีย แล้วให้น้องลีฟตอบยืนยันทันที ----
+  //  พลาด/ล่ม/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งกล่องเขียว) ลูกค้าไม่เจอ error
+  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|available|vacan|book/i.test(String(message))) {
+    try {
+      const q = await extractAvailabilityQuery(history);
+      if (q.ask) {
+        const data = await fetchAvailability(q.checkin, q.checkout);
+        extra +=
+          `\n\n[ข้อมูลห้องว่างจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${q.checkin} → เช็คเอาท์ ${q.checkout}]\n` +
+          JSON.stringify(data) +
+          `\n(key = ประเภทห้อง · value = จำนวนห้องที่ว่างครบทุกคืนในช่วงนี้ · 0 = เต็ม)\n` +
+          `คำสั่ง: ใช้ข้อมูลนี้ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูดว่า "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]] สำหรับช่วงวันนี้ · ` +
+          `ถ้าห้องที่ลูกค้าถามเต็ม แนะนำประเภทที่ยังว่างในช่วงเดียวกันแทน · ` +
+          `ถ้าลูกค้าตกลงจอง เก็บชื่อ-เบอร์แล้วใส่ [[ALERT:booking:...]] ให้ทีมล็อกห้องตามปกติ (การจองจริงยังต้องทีมยืนยัน)`;
+        console.log(`avail check ok: ${q.checkin}→${q.checkout}`);
+      }
+    } catch (e) {
+      console.error("avail check error:", e.message); // เงียบ ๆ ใช้โหมดเดิม
+    }
   }
 
   let replyText;
