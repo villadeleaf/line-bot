@@ -630,16 +630,29 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     try {
       const q = await extractAvailabilityQuery(history);
       if (q.ask) {
+        // กันปี พ.ศ. หลุดมา (เช่น 2569) — ปีเกินปีปัจจุบัน +2 = พ.ศ. แน่นอน → ลบ 543 เป็น ค.ศ.
+        const fixBE = (d) => {
+          const y = parseInt(d.slice(0, 4), 10);
+          const nowY = new Date().getFullYear();
+          return y > nowY + 2 ? String(y - 543) + d.slice(4) : d;
+        };
+        q.checkin = fixBE(q.checkin);
+        q.checkout = fixBE(q.checkout);
         const data = await fetchAvailability(q.checkin, q.checkout);
+        // แปลงเป็นบรรทัดไทยชัด ๆ (ไม่ส่ง JSON ดิบ — กันอ่านเลข 0 พลาด)
+        const av = data.available || {};
+        const lines = Object.entries(av)
+          .map(([k, v]) => `• ${k}: ${Number(v) > 0 ? `ว่าง ${v} ห้อง ✅` : "เต็มแล้ว ❌"}`)
+          .join("\n");
         extra +=
           `\n\n[ข้อมูลห้องว่างจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${q.checkin} → เช็คเอาท์ ${q.checkout} (${data.nights || "?"} คืน)]\n` +
-          JSON.stringify(data.available || data) +
-          `\n(ตัวเลข = จำนวนห้องที่ว่าง "ครบทุกคืน" ของช่วงนี้ · 0 = เต็ม · ข้อมูลตรงกับปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
+          lines +
+          `\n(ข้อมูลตรงปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
           `คำสั่ง: ใช้ข้อมูลนี้ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูดว่า "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]] สำหรับช่วงวันนี้ · ` +
+          `🚨 ประเภทที่ขึ้น "เต็มแล้ว ❌" ต้องบอกลูกค้าตรง ๆ ว่าช่วงนั้นเต็ม ห้ามตอบว่าว่างเด็ดขาด แล้วเสนอประเภทที่ยังว่าง ✅ ในช่วงเดียวกันแทน · ` +
           `⚠️ ราคา: ให้คิดจาก "ตารางราคาในคลังความรู้" ตามช่วงวัน (Low/High/วันหยุด) เท่านั้น ห้ามใช้ตัวเลขราคาอื่นใดจากข้อมูลระบบนี้ · ` +
-          `ถ้าห้องที่ลูกค้าถามเต็ม แนะนำประเภทที่ยังว่างในช่วงเดียวกันแทน (พร้อมราคาจากตาราง) · ` +
           `ถ้าลูกค้าตกลงจอง เก็บชื่อ-เบอร์แล้วใส่ [[ALERT:booking:...]] ให้ทีมล็อกห้องตามปกติ (การจองจริงยังต้องทีมยืนยัน)`;
-        console.log(`avail check ok: ${q.checkin}→${q.checkout}`);
+        console.log(`avail check ok: ${q.checkin}→${q.checkout} | ${JSON.stringify(av)}`);
       }
     } catch (e) {
       console.error("avail check error:", e.message); // เงียบ ๆ ใช้โหมดเดิม
