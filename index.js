@@ -489,11 +489,25 @@ app.get("/selftest", async (req, res) => {
   } catch (e) {
     faq.error = e && e.message ? e.message : String(e);
   }
+  // Phase 3: ตรวจกุญแจห้องว่าง — บอกความยาว + หัว/ท้าย + ลองยิง API จริง (วินิจฉัย key หาย/เพี้ยนได้ทันที)
+  const ak = AVAIL_API_KEY;
+  const avail = { keyLen: ak.length, head: ak.slice(0, 4), tail: ak.slice(-4), probe: "no-key" };
+  if (ak) {
+    try {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const dayAfter = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+      await fetchAvailability(tomorrow, dayAfter);
+      avail.probe = "ok";
+    } catch (e) {
+      avail.probe = "error: " + (e && e.message ? e.message : String(e));
+    }
+  }
   res.json({
     version: "v7-sales",
     keyCleanLen: clean.length,
     adminCount: ADMIN_USER_IDS.length,
     faq,
+    avail,
   });
 });
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
