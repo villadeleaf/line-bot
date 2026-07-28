@@ -626,7 +626,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
 
   // ---- Phase 3: ลูกค้าถามห้องว่าง/จะจอง → เช็คปฏิทินจริงจากระบบเฮีย แล้วให้น้องลีฟตอบยืนยันทันที ----
   //  พลาด/ล่ม/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งกล่องเขียว) ลูกค้าไม่เจอ error
-  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|available|vacan|book/i.test(String(message))) {
+  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|available|vacan|book|price|rate/i.test(String(message))) {
     try {
       const q = await extractAvailabilityQuery(history);
       if (q.ask) {
