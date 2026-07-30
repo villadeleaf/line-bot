@@ -8,7 +8,7 @@ const express = require("express");
 const line = require("@line/bot-sdk");
 const path = require("path");
 const fs = require("fs");
-const { generateReply, generateFbReply, extractTeaching, extractAvailabilityQuery } = require("./brain");
+const { generateReply, generateFbReply, extractTeaching, extractAvailabilityQuery, findMenuImage } = require("./brain");
 
 // ---- Phase 3: เช็คห้องว่างเรียลไทม์จากระบบเฮีย (อ่านอย่างเดียว) ----
 //  ทำงานเมื่อตั้ง AVAIL_API_KEY เท่านั้น — ไม่ตั้ง = พฤติกรรมเดิมทุกอย่าง (ส่งทีมเช็ค)
@@ -107,6 +107,7 @@ function nextBatch(userId, key) {
 // ---- แปลงคำตอบ (ที่อาจมี [[IMG:key]] / [[IMG:key:more]]) เป็นข้อความ LINE ----
 function buildMessages(userId, replyText) {
   const files = [];
+  const extUrls = []; // รูปจาก URL ภายนอก (เช่นรูปเมนูจากระบบเฮีย)
   const text = replyText
     // [[IMG:key:more]] = ส่งรูปชุดถัดไป (4 รูป)
     .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => {
@@ -116,6 +117,12 @@ function buildMessages(userId, replyText) {
     // [[IMG:key]] = ส่งรูปปก 1 รูป
     .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => {
       if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]);
+      return "";
+    })
+    // [[MENUIMG:ชื่อเมนู]] = รูปเมนูจริงจาก API ระบบร้าน (สูงสุด 2)
+    .replace(/\[\[MENUIMG:([^\]]+)\]\]/gi, (_m, name) => {
+      const u = findMenuImage(name);
+      if (u && extUrls.length < 2) extUrls.push(u);
       return "";
     })
     // 🛡️ กันเหนียว: ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ที่หลุดรอดมา ไม่ให้ลูกค้าเห็นเด็ดขาด
@@ -131,18 +138,23 @@ function buildMessages(userId, replyText) {
     const url = `${PUBLIC_URL}/images/${encodeURIComponent(f)}`;
     messages.push({ type: "image", originalContentUrl: url, previewImageUrl: url });
   }
+  for (const url of extUrls) {
+    messages.push({ type: "image", originalContentUrl: url, previewImageUrl: url });
+  }
   return messages.slice(0, 5); // LINE จำกัด 5 ข้อความต่อการตอบ 1 ครั้ง
 }
 
 // ---- ดึง URL รูปจากมาร์กเกอร์ [[IMG:...]] ในคำตอบ → ให้ /ask ส่ง images ไปให้ระบบเฮียส่งรูปเอง ----
 //   (ระบบเฮียเอา url ในลิสต์ไปสร้าง LINE image message เอง · สูงสุด 4 รูป = ข้อความ+4รูป = ลิมิต LINE)
 function extractImageUrls(userId, replyText) {
-  if (!PUBLIC_URL) return [];
   const files = [];
+  const extUrls = []; // รูปเมนูจริงจาก API ระบบร้าน ([[MENUIMG:ชื่อ]])
   (replyText || "")
     .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => { if (IMAGES[k]) files.push(...nextBatch(userId, k)); return ""; })
-    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => { if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]); return ""; });
-  return files.slice(0, 4).map((f) => `${PUBLIC_URL}/images/${encodeURIComponent(f)}`);
+    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => { if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]); return ""; })
+    .replace(/\[\[MENUIMG:([^\]]+)\]\]/gi, (_m, name) => { const u = findMenuImage(name); if (u && extUrls.length < 2) extUrls.push(u); return ""; });
+  const fileUrls = PUBLIC_URL ? files.map((f) => `${PUBLIC_URL}/images/${encodeURIComponent(f)}`) : [];
+  return [...fileUrls, ...extUrls].slice(0, 4);
 }
 
 // ตอบกลับข้อความเดียวสั้น ๆ (ใช้กับคำสั่งแอดมิน)

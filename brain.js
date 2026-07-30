@@ -28,9 +28,102 @@ let menuKnowledge = "";
     menuKnowledge = knowledge.slice(s, e).trim();
     knowledge =
       knowledge.slice(0, s) +
-      "(รีสอร์ทมีเมนูอาหารรายจาน à la carte 177 รายการ 13 หมวด — คาเฟ่/อาหาร/ของหวาน/เครื่องดื่ม/ค็อกเทล/เหล้า-เบียร์ พร้อมราคา — ระบบจะแนบรายละเอียดเมนูให้อัตโนมัติเมื่อลูกค้าถามเรื่องอาหาร/เมนู)\n\n" +
+      "(รีสอร์ทมีเมนูอาหารรายจาน à la carte ครบทุกหมวด — คาเฟ่/อาหาร/ของหวาน/เครื่องดื่ม/ค็อกเทล/เหล้า-เบียร์ พร้อมราคาและรูปจริง ดึงสดจากระบบร้าน — ระบบจะแนบรายละเอียดเมนูให้อัตโนมัติเมื่อลูกค้าถามเรื่องอาหาร/เมนู)\n\n" +
       knowledge.slice(e);
   }
+}
+
+// ---- 🍽️ เมนูเรียลไทม์จาก API ระบบร้าน (POS ของเฮีย) ----
+//  ดึงเมนูสดทุก 5 นาที: ราคา/ติดดาว ⭐/ปิดขาย/รูป อัปเดตอัตโนมัติจากระบบจริง
+//  API ล่ม → ใช้เมนูสำรองใน knowledge.md (menuKnowledge) แทน = พฤติกรรมเดิม
+const MENU_API_URL = (process.env.MENU_API_URL || "https://backend.villadeleaf.online/api/menu").trim();
+const MENU_API_KEY = (process.env.MENU_API_KEY || process.env.AVAIL_API_KEY || "").trim();
+const MENU_TTL_MS = 5 * 60 * 1000;
+let menuCache = { at: 0, text: "", items: [] };
+
+function formatMenuText(items) {
+  const sell = items.filter((m) => m.available !== false);
+  const starred = sell.filter((m) => m.recommended);
+  const byCat = new Map();
+  for (const m of sell) {
+    const c = m.category || "อื่น ๆ";
+    if (!byCat.has(c)) byCat.set(c, []);
+    byCat.get(c).push(m);
+  }
+  const fmt = (m) => {
+    const desc = (m.description || "").trim();
+    return `${m.name}${desc && desc.length <= 60 ? ` (${desc})` : ""} ${Number(m.price)}`;
+  };
+  const lines = [];
+  lines.push(
+    "🍴 เมนูสั่งเพิ่ม (à la carte) — ดึงสดจากระบบร้าน ณ ขณะนี้ ราคาถูกต้องตอบลูกค้าได้ทันที · สั่งที่ห้องอาหาร ราคาบาท/จาน (แยกจากค่าห้อง) · ครัวรับออเดอร์ถึง 20:00 น."
+  );
+  if (starred.length) {
+    lines.push(
+      `\n⭐ เมนูแนะนำของร้าน (ครัวติดดาวในระบบจริง — ลูกค้าถาม "กินอะไรดี/แนะนำเมนู" เชียร์จากลิสต์นี้ก่อน 2-3 จาน):\n` +
+        starred.map(fmt).join(" · ")
+    );
+  }
+  lines.push("");
+  for (const [cat, ms] of byCat) lines.push(`- ${cat}: ${ms.map(fmt).join(" · ")}`);
+  lines.push(
+    `\n📸 ทุกเมนูมีรูปจริง: อยากส่งรูปเมนูให้ลูกค้า ให้ใส่ [[MENUIMG:ชื่อเมนูตรงตามลิสต์เป๊ะ ๆ]] ต่อท้ายข้อความ (สูงสุด 2 เมนูต่อข้อความ) — ใช้เฉพาะตอนเชียร์เมนูเด่นหรือลูกค้าถามถึงเมนูนั้นตรง ๆ (รูปช่วยขายกว่าบรรยาย) ห้ามใส่พร่ำเพรื่อทุกข้อความ`
+  );
+  return lines.join("\n");
+}
+
+async function refreshMenuCache() {
+  if (!MENU_API_KEY) return null;
+  if (menuCache.text && Date.now() - menuCache.at < MENU_TTL_MS) return menuCache;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(MENU_API_URL, { headers: { "x-api-key": MENU_API_KEY }, signal: ctrl.signal });
+    if (!r.ok) throw new Error("menu api " + r.status);
+    const data = await r.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) throw new Error("menu api empty");
+    menuCache = { at: Date.now(), text: formatMenuText(items), items };
+    return menuCache;
+  } catch (e) {
+    console.error("เมนู API ล้มเหลว (ใช้สำรอง):", e.message);
+    return menuCache.text ? menuCache : null; // แคชเก่าก็ยังดีกว่าไม่มี
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// เช็คว่าข้อความลูกค้าพูดถึง "ชื่อเมนูจริง" ในระบบไหม (กันเคสชื่อเมนูที่ regex คำทั่วไปจับไม่ได้ เช่น "ซันเซ็ท")
+//  จับแบบยืดหยุ่น: ชื่อเต็มอยู่ในข้อความ หรือท่อนของชื่อยาว ≥5 ตัวอักษรอยู่ในข้อความ
+function mentionsMenuItem(text) {
+  const msg = String(text || "").replace(/\s+/g, "").toLowerCase();
+  if (msg.length < 3) return false;
+  for (const m of menuCache.items || []) {
+    for (const raw of [m.name, m.nameEn]) {
+      const n = String(raw || "").replace(/\s+/g, "").toLowerCase();
+      if (n.length < 5) continue;
+      if (msg.includes(n)) return true;
+      for (let i = 0; i + 5 <= n.length; i++) {
+        if (msg.includes(n.slice(i, i + 5))) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// อุ่นแคชเมนูตั้งแต่บอทสตาร์ท (mentionsMenuItem จะได้มีรายชื่อให้เช็คตั้งแต่ข้อความแรก)
+refreshMenuCache().catch(() => {});
+
+// หา URL รูปของเมนูจากชื่อ (ให้ index.js ใช้ตอนเจอ [[MENUIMG:ชื่อ]])
+function findMenuImage(name) {
+  const q = String(name || "").replace(/\s+/g, "").toLowerCase();
+  if (!q) return "";
+  const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+  const items = menuCache.items || [];
+  const hit =
+    items.find((m) => norm(m.name) === q || norm(m.nameEn) === q) ||
+    items.find((m) => norm(m.name).includes(q) || q.includes(norm(m.name)));
+  return hit && hit.imageUrl ? hit.imageUrl : "";
 }
 
 // ---- บุคลิกและวิธีตอบของบอท ----
@@ -64,7 +157,7 @@ const SYSTEM_PROMPT = `คุณคือ "น้องลีฟ" 🌿 Reservati
 - ขายพ่วงเป็น "เซ็ตธีม": จับคู่ห้อง + กิจกรรม + อาหาร เช่น แพ็กคู่รัก (ห้องวิวแม่น้ำ + ล่องเรือเย็น + นวดผ่อนคลาย), แพ็กครอบครัว (Family Room + ล่องเรือยาง) — เพิ่มมูลค่าการจอง แต่เสนอแบบแนะนำ ไม่ยัดเยียด
 - ⏱️ จังหวะขายพ่วง (สำคัญ): เสนอบริการเพิ่ม "หลังลูกค้าตัดสินใจเรื่องหลักแล้ว" เท่านั้น (เช่น ตกลงจองห้องแล้ว → ค่อยแนะนำนวด/ล่องแก่ง/คาเฟ่ พร้อมเหตุผลสั้น ๆ) — ห้ามเสนอหลายบริการพร้อมกันตั้งแต่ต้นบทสนทนา หรือเสนอเรื่องใหม่ทั้งที่ลูกค้ายังไม่ได้ตัดสินใจเรื่องเดิม (จะรู้สึกถูกเร่งปิดการขาย)
 - 🏡 แนะนำ "ของรีสอร์ทก่อนเสมอ": ลูกค้าถามหาคาเฟ่/ร้านอาหาร/ที่นั่งชิล → แนะนำคาเฟ่และห้องอาหารริมน้ำของรีสอร์ทก่อน (จุดเด่น เมนู Signature วิวแม่น้ำ เวลาเปิด) แล้วค่อยแนะนำร้านข้างนอกเมื่อลูกค้าต้องการออกไปเที่ยวจริง ๆ (เป้าหมายหลัก = เพิ่มรายได้ให้รีสอร์ท)
-- ☕ ลูกค้าถาม "กินอะไรดี / แนะนำเมนูหน่อย" → ชูเมนูแนะนำจริงของร้าน 2-3 อย่าง ไม่ไล่รายการทั้งหมด: อาหารคาวใช้ "⭐ เมนูแนะนำของร้าน" ในลิสต์เมนู (7 จานที่ครัวติดดาวเอง เช่น ต้มยำปลาคัง, ปลากะพงสามรส) เลือกให้เข้ากับลูกค้า · เครื่องดื่ม Signature (Must Try จากโปสเตอร์): "Kaeng Krachan Coffee" (ลาเต้หอมน้ำตาลโตนด เสิร์ฟคู่ทองม้วนกรอบ) และ "แก่งกระจานซันเซ็ท" (อัญชันเลมอนโซดา ไม่มีแอลกอฮอล์) · ค็อกเทลเด่น Clover Club · ⚠️ แนะนำได้เฉพาะเมนูที่มีในลิสต์จริงเท่านั้น ห้ามแต่งชื่อเมนู/ขนม/เครื่องดื่มที่ร้านไม่มีเด็ดขาด ถ้ารายละเอียดเมนูไม่อยู่ในมือ บอกว่า "ขอตรวจสอบรายละเอียดเมนูให้ก่อนนะคะ"
+- ☕ ลูกค้าถาม "กินอะไรดี / แนะนำเมนูหน่อย" → ชูเมนูแนะนำจริงของร้าน 2-3 อย่าง ไม่ไล่รายการทั้งหมด: อาหารคาวใช้ "⭐ เมนูแนะนำของร้าน" ในลิสต์เมนู (จานที่ครัวติดดาวเองในระบบ อัปเดตตามจริง) เลือกให้เข้ากับลูกค้า · เครื่องดื่ม Signature (Must Try จากโปสเตอร์): "Kaeng Krachan Coffee" (ลาเต้หอมน้ำตาลโตนด เสิร์ฟคู่ทองม้วนกรอบ) และ "แก่งกระจานซันเซ็ท" (อัญชันเลมอนโซดา ไม่มีแอลกอฮอล์) · ค็อกเทลเด่น Clover Club · ⚠️ แนะนำได้เฉพาะเมนูที่มีในลิสต์จริงเท่านั้น ห้ามแต่งชื่อเมนู/ขนม/เครื่องดื่มที่ร้านไม่มีเด็ดขาด ถ้ารายละเอียดเมนูไม่อยู่ในมือ บอกว่า "ขอตรวจสอบรายละเอียดเมนูให้ก่อนนะคะ"
 - 🧭 เป็น "ที่ปรึกษาทริป" ไม่ใช่แค่ผู้ตอบคำถาม: เมื่อลูกค้าสนใจกิจกรรม/มาพักหลายคืน ช่วยวางแผนสั้น ๆ ให้เลย เช่น "พัก 2 คืน แนะนำวันแรกบ่ายล่องแก่ง เย็นนวดผ่อนคลายที่ห้อง · ถ้าตรงวันอาทิตย์ เช้าตักบาตรริมน้ำ เดินตลาดนัดหน้ารีสอร์ทค่ะ" — เพิ่มคุณค่าบทสนทนา + โอกาสขายกิจกรรม
 - ชูความคุ้ม: ถ้าเป็น Low season บอกว่าราคาพิเศษกว่า High season; ไฮไลต์ของฟรี (สระเกลือ, อาหารเช้าฟรี, ตักบาตรริมน้ำวันอาทิตย์, ตลาดนัดริมน้ำเสาร์-อาทิตย์, รับสัตว์เลี้ยง, วิวแม่น้ำ)
 - รับมือข้อโต้แย้งแบบมืออาชีพ (ห้ามลด/แต่งส่วนลดเองเด็ดขาด):
@@ -163,12 +256,21 @@ async function generateReply(history, extraKnowledge = "") {
   const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
   const lastText =
     lastUserMsg && typeof lastUserMsg.content === "string" ? lastUserMsg.content : "";
-  const foodRe = /อาหาร|เมนู|à ?la ?carte|กับข้าว|ของกิน|จะกิน|อยากกิน|สั่งอาหาร|สั่งกับข้าว|หิว|เครื่องดื่ม|กาแฟ|ค็อกเทล|ม็อกเทล|เบียร์|ชาไทย|น้ำผลไม้|ปิ้งย่าง|มีอะไรกิน|กินอะไร|ราคาอาหาร|\bmenu\b|\bfood\b|\bdrink\b/i;
-  if (menuKnowledge && foodRe.test(lastText)) {
-    system.push({
-      type: "text",
-      text: "เมนูอาหาร/เครื่องดื่มรายจานพร้อมราคา (ตอบเรื่องเมนูจากนี่ได้เลย):\n" + menuKnowledge,
-    });
+  const foodRe = /อาหาร|เมนู|à ?la ?carte|กับข้าว|ของกิน|จะกิน|อยากกิน|สั่งอาหาร|สั่งกับข้าว|หิว|เครื่องดื่ม|กาแฟ|ลาเต้|อเมริกาโน|เอสเพรสโซ|มัทฉะ|ชาเขียว|ชาไทย|ช็อกโกแลต|โกโก้|ค็อกเทล|ม็อกเทล|เบียร์|เหล้า|โซจู|วิสกี้|ไวน์|โซดา|สมูทตี้|น้ำปั่น|น้ำผลไม้|ของหวาน|ขนม|เค้ก|ชีสเค้ก|วาฟเฟิล|ลาวา|ไอศครีม|ไอติม|ปิ้งย่าง|มีอะไรกิน|กินอะไร|ดื่มอะไร|ราคาอาหาร|คาเฟ่|\bcafe\b|\bmenu\b|\bfood\b|\bdrink\b|\bcoffee\b|\bdessert\b/i;
+  if (foodRe.test(lastText) || mentionsMenuItem(lastText)) {
+    // เมนูสดจาก API ระบบร้านก่อน → ล่มค่อยใช้เมนูสำรองในไฟล์ความรู้
+    let menuText = "";
+    try {
+      const mc = await refreshMenuCache();
+      if (mc && mc.text) menuText = mc.text;
+    } catch (_e) {}
+    if (!menuText) menuText = menuKnowledge;
+    if (menuText) {
+      system.push({
+        type: "text",
+        text: "เมนูอาหาร/เครื่องดื่มรายจานพร้อมราคา (ตอบเรื่องเมนูจากนี่ได้เลย):\n" + menuText,
+      });
+    }
   }
 
   // ลองเรียก AI ใหม่เองอีกชั้น เผื่อ API overload/สะดุด (529/429/5xx) — หน่วงเพิ่มขึ้นเรื่อย ๆ
@@ -306,4 +408,4 @@ async function extractAvailabilityQuery(history) {
   return { ask: false };
 }
 
-module.exports = { MODEL, SYSTEM_PROMPT, generateReply, generateFbReply, extractTeaching, extractAvailabilityQuery };
+module.exports = { MODEL, SYSTEM_PROMPT, generateReply, generateFbReply, extractTeaching, extractAvailabilityQuery, findMenuImage };
