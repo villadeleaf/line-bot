@@ -439,6 +439,51 @@ async function handleTextMessage(event) {
     console.error("loadFaq error:", e.message);
   }
 
+  // ---- Phase 3: ลูกค้าถามห้องว่าง/จะจอง → เช็คปฏิทินจริงจากระบบเฮีย แล้วให้น้องลีฟตอบยืนยันทันที ----
+  //  (path นี้คือ LINE OA ตรง — ต้องมีบล็อกนี้เหมือน /ask ไม่งั้นจะตอบราคาจากตารางจำ + โยนทีม)
+  //  พลาด/ล่ม/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งเตือน) ลูกค้าไม่เจอ error
+  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|available|vacan|book|price|rate/i.test(String(userText))) {
+    try {
+      const q = await extractAvailabilityQuery(history);
+      if (q.ask) {
+        // กันปี พ.ศ. หลุดมา (เช่น 2569) — ปีเกินปีปัจจุบัน +2 = พ.ศ. แน่นอน → ลบ 543 เป็น ค.ศ.
+        const fixBE = (d) => {
+          const y = parseInt(d.slice(0, 4), 10);
+          const nowY = new Date().getFullYear();
+          return y > nowY + 2 ? String(y - 543) + d.slice(4) : d;
+        };
+        q.checkin = fixBE(q.checkin);
+        q.checkout = fixBE(q.checkout);
+        const data = await fetchAvailability(q.checkin, q.checkout);
+        // แปลงเป็นบรรทัดไทยชัด ๆ (ไม่ส่ง JSON ดิบ — กันอ่านเลข 0 พลาด) + ราคาจริงจากปฏิทินเรทระบบจอง
+        const av = data.available || {};
+        const det = data.detail || {};
+        const lines = Object.entries(av)
+          .map(([k, v]) => {
+            const d = det[k] || {};
+            const price = d.priceNight
+              ? ` · ${Number(d.priceNight).toLocaleString()}฿/คืน${d.priceTotal && data.nights > 1 ? ` (รวม ${data.nights} คืน = ${Number(d.priceTotal).toLocaleString()}฿)` : ""}`
+              : "";
+            return `• ${k}: ${Number(v) > 0 ? `ว่าง ${v} ห้อง ✅` : "เต็มแล้ว ❌"}${price}`;
+          })
+          .join("\n");
+        const seasonTag = String(data.season || "").trim();
+        extra +=
+          `\n\n[ข้อมูลห้องว่างจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${q.checkin} → เช็คเอาท์ ${q.checkout} (${data.nights || "?"} คืน)]\n` +
+          lines +
+          (seasonTag ? `\nป้ายช่วงวันจากระบบจอง: "${seasonTag}"` : "") +
+          `\n(ข้อมูลตรงปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
+          `คำสั่ง: ใช้ข้อมูลนี้ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูดว่า "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]] สำหรับช่วงวันนี้ · ` +
+          `🚨 ประเภทที่ขึ้น "เต็มแล้ว ❌" ต้องบอกลูกค้าตรง ๆ ว่าช่วงนั้นเต็ม ห้ามตอบว่าว่างเด็ดขาด แล้วเสนอประเภทที่ยังว่าง ✅ ในช่วงเดียวกันแทน · ` +
+          `💰 ราคา: ใช้ "ราคา/คืน และราคารวม" จากข้อมูลนี้เป็นหลัก (มาจากปฏิทินเรทจริงของระบบจอง — แหล่งความจริงเดียว ตรวจแล้วตรงทุกช่วง) ห้ามคำนวณเอง/ห้ามใช้ตารางในคลังทับตัวเลขนี้ · ทุกราคารวมอาหารเช้าแล้ว บอกลูกค้าด้วย · ค่าสัตว์เลี้ยง 500฿/ตัว/คืน และเตียงเสริม บวกเพิ่มตามกฎในคลังตามเดิม · ` +
+          `ถ้าลูกค้าตกลงจอง เก็บชื่อ-เบอร์แล้วใส่ [[ALERT:booking:...]] ให้ทีมล็อกห้องตามปกติ (การจองจริงยังต้องทีมยืนยัน)`;
+        console.log(`avail check ok (webhook): ${q.checkin}→${q.checkout} | ${JSON.stringify(av)}`);
+      }
+    } catch (e) {
+      console.error("avail check error (webhook):", e.message); // เงียบ ๆ ใช้โหมดเดิม
+    }
+  }
+
   let replyText;
   try {
     replyText = await generateReply(history, extra);
