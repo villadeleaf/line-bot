@@ -445,6 +445,26 @@ async function handleFollow(event) {
   }
 }
 
+// ---- ลูกค้าส่ง "รูป" มา (น้องลีฟดูรูปตรง ๆ ไม่ได้) → ไม่ปล่อยเงียบ + แจ้งทีมให้เปิดดูรูปจริงในแชท ----
+async function handleImageMessage(event) {
+  const userId = event.source.userId || "unknown";
+  if (ADMIN_USER_IDS.includes(userId)) return; // แอดมินส่งรูปเอง ไม่ต้องตอบ
+  if (isPaused(userId)) return;                 // แอดมินคุยเองอยู่ → บอทเงียบ
+  const msg =
+    "ขอบคุณที่ส่งรูปมานะคะ 🌿 ตอนนี้น้องลีฟดูแลระบบออนไลน์และยังเปิดดูรูปโดยตรงไม่ได้ค่ะ 🙏 " +
+    "รบกวนพิมพ์บอกสั้น ๆ ได้ไหมคะว่าให้ช่วยเรื่องไหน เดี๋ยวน้องลีฟดูแลให้เลยค่ะ\n\n" +
+    "📌 หากคุณลูกค้ากำลังเข้าพักอยู่แล้ว ต้องการสอบถามข้อมูล ขอรับบริการต่าง ๆ หรือเจอปัญหาหน้างาน " +
+    "ติดต่อเจ้าหน้าที่ Room Service ที่หน้างานโดยตรงได้เลยที่เบอร์ 06-1245-2475 ทีมงานหน้างานพร้อมเข้าไปดูแลให้ทันทีค่ะ 😊";
+  await lineClient.replyMessage({ replyToken: event.replyToken, messages: [{ type: "text", text: msg }] });
+  // แจ้งทีม: น้องลีฟดูรูปไม่ได้ แต่คน(แอดมิน/ทีม)เปิดดูรูปในแชทได้ → ให้เข้าไปดู
+  try {
+    const name = await getName(userId);
+    await pushAlert(userId, name, "help", "ลูกค้าส่งรูปมา (น้องลีฟดูรูปไม่ได้) — รบกวนทีมเปิดดูรูปในแชทแล้วช่วยดูแลต่อค่ะ");
+  } catch (e) {
+    console.error("image alert error:", e.message);
+  }
+}
+
 async function handleTextMessage(event) {
   const userId = event.source.userId || "unknown";
   const userText = event.message.text;
@@ -927,6 +947,8 @@ app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
       try {
         if (event.type === "message" && event.message.type === "text") {
           await handleTextMessage(event);
+        } else if (event.type === "message" && event.message.type === "image") {
+          await handleImageMessage(event); // ลูกค้าส่งรูป → ตอบ + แจ้งทีม (ไม่ปล่อยเงียบ)
         } else if (event.type === "postback") {
           await handlePostback(event); // ปุ่มขอคุยเอง / ให้บอทต่อ
         } else if (event.type === "follow") {
