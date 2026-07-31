@@ -780,6 +780,25 @@ app.get("/selftest", async (req, res) => {
       } catch (e) {
         alertCfg.tokenOA = "getBotInfo error: " + (e && (e.status || e.statusCode) ? (e.status || e.statusCode) + " " + (typeof e.body === "string" ? e.body : JSON.stringify(e.body || "")) : e.message || String(e));
       }
+      // เช็คว่าบอทเข้าถึงกลุ่มนี้ได้ไหม (ถ้า error = บอทไม่ได้อยู่ในกลุ่ม/กลุ่มผิด)
+      if (ALERT_GROUP_ID) {
+        try {
+          const gs = await alertClient.getGroupSummary(ALERT_GROUP_ID);
+          alertCfg.group = { name: gs.groupName || "(ok)" };
+        } catch (e) {
+          const st = e && (e.status || e.statusCode);
+          const body = e && (typeof e.body === "string" ? e.body : JSON.stringify(e.body || {}));
+          alertCfg.group = `เข้าถึงกลุ่มไม่ได้ ${st || ""}: ${body || (e && e.message) || String(e)}`.slice(0, 300);
+        }
+      }
+      // เช็คโควตา push ของ OA (ฟรี ~500/เดือน) — ถ้าใช้หมดจะ push ไม่ได้
+      try {
+        const q = await alertClient.getMessageQuota();
+        const c = await alertClient.getMessageQuotaConsumption();
+        alertCfg.quota = { type: q.type, limit: q.value, used: c.totalUsage };
+      } catch (e) {
+        alertCfg.quota = "quota check error: " + (e && e.message ? e.message : String(e));
+      }
       if (ALERT_GROUP_ID) {
         try {
           await alertClient.pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
