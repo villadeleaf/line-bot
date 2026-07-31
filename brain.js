@@ -285,7 +285,7 @@ async function generateReply(history, extraKnowledge = "") {
     try {
       response = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 2000,
+        max_tokens: 4000,
         system,
         messages: history,
       });
@@ -301,11 +301,18 @@ async function generateReply(history, extraKnowledge = "") {
   }
   if (!response) throw lastErr;
 
-  return response.content
+  const text = response.content
     .filter((b) => b.type === "text")
     .map((b) => b.text)
     .join("\n")
     .trim();
+  // AI คืนข้อความเปล่า (เช่นคำถามซับซ้อน/คิดคอมโบกรุ๊ปจนชน max_tokens) → โยน error
+  // ให้ caller ตกไป fallback (เด้งทีม) แทนที่จะปล่อยลูกค้าเงียบ + log stop_reason ไว้วินิจฉัย
+  if (!text) {
+    console.error("generateReply EMPTY output. stop_reason=" + response.stop_reason + " blocks=" + JSON.stringify((response.content || []).map((b) => b.type)));
+    throw new Error("empty_ai_output(stop=" + response.stop_reason + ")");
+  }
+  return text;
 }
 
 // ============================================================
