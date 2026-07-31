@@ -782,10 +782,12 @@ app.get("/selftest", async (req, res) => {
       } catch (e) {
         alertCfg.tokenOA = "getBotInfo error: " + (e && (e.status || e.statusCode) ? (e.status || e.statusCode) + " " + (typeof e.body === "string" ? e.body : JSON.stringify(e.body || "")) : e.message || String(e));
       }
-      // เช็คว่าบอทเข้าถึงกลุ่มนี้ได้ไหม (ถ้า error = บอทไม่ได้อยู่ในกลุ่ม/กลุ่มผิด)
-      if (ALERT_GROUP_ID) {
+      // เช็คว่าบอทเข้าถึงกลุ่มนี้ได้ไหม (ใช้ ?gid= ทดสอบ groupId อื่นได้ ไม่ต้องแก้ env)
+      const gid = (req.query.gid || ALERT_GROUP_ID || "").trim();
+      alertCfg.testGid = gid ? gid.slice(0, 6) + "…" + gid.slice(-4) : "(none)";
+      if (gid) {
         try {
-          const gs = await alertClient.getGroupSummary(ALERT_GROUP_ID);
+          const gs = await alertClient.getGroupSummary(gid);
           alertCfg.group = { name: gs.groupName || "(ok)" };
         } catch (e) {
           const st = e && (e.status || e.statusCode);
@@ -801,9 +803,9 @@ app.get("/selftest", async (req, res) => {
       } catch (e) {
         alertCfg.quota = "quota check error: " + (e && e.message ? e.message : String(e));
       }
-      if (ALERT_GROUP_ID) {
+      if (gid) {
         try {
-          await alertClient.pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
+          await alertClient.pushMessage({ to: gid, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
           alertCfg.push = "ok ✅ ส่งเข้ากลุ่มสำเร็จ";
         } catch (e) {
           const st = e && (e.status || e.statusCode);
@@ -951,7 +953,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   } catch (e) {
     console.error("ask error:", e.message);
     // AI ขัดข้อง → บอกระบบเฮียให้เด้งกล่องเขียว (needsHuman) + fallback เป็นคนตอบ
-    return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "ระบบ AI ขัดข้องชั่วคราว รบกวนทีมงานเข้าไปดูแลลูกค้าต่อค่ะ" });
+    return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: req.body.test ? "AI error: " + (e && e.message ? e.message : String(e)) : "ระบบ AI ขัดข้องชั่วคราว รบกวนทีมงานเข้าไปดูแลลูกค้าต่อค่ะ" });
   }
 
   // ถ้าน้องลีฟเจอเคสที่ต้องให้คนดู (จอง/ห้องว่าง/ส่วนลด/ตอบไม่ได้):
