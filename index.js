@@ -201,6 +201,8 @@ const ALERT_GROUP_ID = (process.env.ALERT_GROUP_ID || "").trim();
 const alertClient = ALERT_PUSH_TOKEN
   ? new line.messagingApi.MessagingApiClient({ channelAccessToken: ALERT_PUSH_TOKEN })
   : null;
+// Group ID จริงล่าสุดที่ webhook เห็น (ไว้หา ALERT_GROUP_ID ที่ถูกต้อง ผ่าน /selftest)
+let lastGroupSeen = null;
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -818,6 +820,7 @@ app.get("/selftest", async (req, res) => {
     faq,
     avail,
     alertCfg,
+    lastGroupSeen,
   });
 });
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
@@ -1078,6 +1081,11 @@ app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
         if (seenEvents.has(eid)) continue; // เคยเจอ event นี้แล้ว → ข้าม
         seenEvents.add(eid);
         if (seenEvents.size > 2000) seenEvents.clear(); // กันหน่วยความจำโตไม่จำกัด
+      }
+      // จับ Group ID จริงจาก event (ไว้ดึงผ่าน /selftest เพื่อหา ALERT_GROUP_ID ที่ถูกต้อง)
+      if (event.source && (event.source.groupId || event.source.roomId)) {
+        lastGroupSeen = { id: event.source.groupId || event.source.roomId, kind: event.source.groupId ? "group" : "room", type: event.type, at: new Date().toISOString() };
+        console.log("group/room event seen:", JSON.stringify(lastGroupSeen));
       }
       try {
         if (event.type === "message" && event.message.type === "text") {
