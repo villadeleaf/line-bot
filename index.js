@@ -772,13 +772,23 @@ app.get("/selftest", async (req, res) => {
   };
   if (req.query.testgroup === "1") {
     if (!alertClient) alertCfg.push = "no-token (ALERT_PUSH_TOKEN ไม่ได้ตั้ง)";
-    else if (!ALERT_GROUP_ID) alertCfg.push = "no-group (ALERT_GROUP_ID ไม่ได้ตั้ง)";
     else {
+      // เช็คว่า token นี้เป็นของ OA ไหน (ต้องเป็น @villadeleaf ที่อยู่ในกลุ่ม)
       try {
-        await alertClient.pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
-        alertCfg.push = "ok ✅ ส่งเข้ากลุ่มสำเร็จ";
+        const info = await alertClient.getBotInfo();
+        alertCfg.tokenOA = { name: info.displayName, basicId: info.basicId, userId: (info.userId || "").slice(0, 8) + "…" };
       } catch (e) {
-        alertCfg.push = "error: " + (e && e.message ? e.message : String(e));
+        alertCfg.tokenOA = "getBotInfo error: " + (e && (e.status || e.statusCode) ? (e.status || e.statusCode) + " " + (typeof e.body === "string" ? e.body : JSON.stringify(e.body || "")) : e.message || String(e));
+      }
+      if (ALERT_GROUP_ID) {
+        try {
+          await alertClient.pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
+          alertCfg.push = "ok ✅ ส่งเข้ากลุ่มสำเร็จ";
+        } catch (e) {
+          const st = e && (e.status || e.statusCode);
+          const body = e && (typeof e.body === "string" ? e.body : JSON.stringify(e.body || {}));
+          alertCfg.push = `error ${st || ""}: ${body || (e && e.message) || String(e)}`.slice(0, 600);
+        }
       }
     }
   }
