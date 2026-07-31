@@ -29,6 +29,149 @@ async function fetchAvailability(checkin, checkout) {
     clearTimeout(t);
   }
 }
+
+// ---- ตัวช่วยวันที่ (UTC ล้วน กัน timezone เพี้ยน) + ป้ายไทย ----
+const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const TH_DOW = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+const ymdToUTC = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const utcToYmd = (dt) => dt.toISOString().slice(0, 10);
+const addDaysStr = (s, n) => { const dt = ymdToUTC(s); dt.setUTCDate(dt.getUTCDate() + n); return utcToYmd(dt); };
+const thaiDate = (s) => { const dt = ymdToUTC(s); return `${dt.getUTCDate()} ${TH_MONTHS[dt.getUTCMonth()]} (${TH_DOW[dt.getUTCDay()]})`; };
+// กันปี พ.ศ. หลุดมา (เช่น 2569) — ปีเกินปีปัจจุบัน +2 = พ.ศ. แน่นอน → ลบ 543 เป็น ค.ศ.
+const fixBE = (d) => { const y = parseInt(String(d).slice(0, 4), 10); const nowY = new Date().getFullYear(); return y > nowY + 2 ? String(y - 543) + String(d).slice(4) : d; };
+// season ที่ลดได้ = มีคำว่า Low (ทั้ง "Low season" และ "Low ศ-ส") · เรทพื้น (floor) = Low ที่ไม่ใช่ ศ-ส/เสาร์-อาทิตย์
+const isLowSeason = (season) => /low/i.test(String(season));
+const isLowWeekday = (season) => { const s = String(season); return /low/i.test(s) && !/ศ-ส|ศ\.?-?ส\.?|เสาร|อาทิตย/i.test(s); };
+
+// เมื่อไหร่ถึงเข้าโหมดเช็คห้องว่าง/ราคา (รวมคำถามต่อ: ลด/แพง/คิดยังไง/ทำไม เพื่อให้ follow-up ทริกเกอร์บล็อกได้)
+const AVAIL_RE = /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|คืนละ|available|vacan|book|price|rate|ลด|แพง|โปร|ส่วนลด|ถูก|คิดราคา|คิดยังไง|คำนวณ|ทำไม|ไม่เท่า|รายคืน|แจกแจง|discount/i;
+// เมื่อไหร่ถึงต้องดึงรายคืน+โปร (จังหวะ 1-3) นอกเหนือจากยอดรวม (จังหวะ 0)
+const DIG_RE = /คิด|คำนวณ|ทำไม|ไม่เท่า|ลด|แพง|ถูกกว่า|โปร|ส่วนลด|ต่อรอง|รายคืน|แจกแจง|breakdown|discount|เท่าวันธรรมดา|วันธรรมดา/i;
+
+// ---- สร้างข้อมูลห้องว่าง+ราคา (แหล่งความจริงเดียว ใช้ทั้ง /webhook และ /ask) ----
+//  จังหวะ 0 (เริ่มถามราคา) = โชว์ยอดรวมล้วน (ไม่มีเฉลี่ย/รายคืน)
+//  จังหวะ 1-3 (คิดยังไง/ทำไมไม่เท่า/ขอลด) = แนบรายคืน + โปรส่วนลด Low season (ลดคืน ศ-ส Low ให้เท่าเรทวันธรรมดา)
+//  ล้มเหลว/วันไม่ชัด = คืน "" เงียบ ๆ → กลับโหมดเดิม (ขอเช็คทีม) ลูกค้าไม่เจอ error
+async function buildAvailabilityExtra(history, message) {
+  if (!AVAIL_API_KEY) return "";
+  if (!AVAIL_RE.test(String(message))) return "";
+  const q = await extractAvailabilityQuery(history);
+  if (!q || !q.ask) return "";
+  const checkin = fixBE(q.checkin);
+  const checkout = fixBE(q.checkout);
+  const data = await fetchAvailability(checkin, checkout);
+  const av = data.available || {};
+  const det = data.detail || {};
+  const seasonTag = String(data.season || "").trim();
+
+  // ----- จังหวะ 0: ยอดรวม + ห้องว่าง (โชว์เป็นค่าเริ่มต้น ไม่มีเฉลี่ย/รายคืน) -----
+  const lines = Object.entries(av)
+    .map(([k, v]) => {
+      const d = det[k] || {};
+      const total = d.priceTotal ? ` · รวม ${Number(d.priceTotal).toLocaleString()}฿` : "";
+      return `• ${k}: ${Number(v) > 0 ? `ว่าง ${v} ห้อง ✅` : "เต็มแล้ว ❌"}${total}`;
+    })
+    .join("\n");
+  let extra =
+    `\n\n[ข้อมูลห้องว่าง+ราคาจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${checkin} → เช็คเอาท์ ${checkout} (${data.nights || "?"} คืน)]\n` +
+    lines +
+    (seasonTag ? `\nป้ายช่วงวันจากระบบจอง: "${seasonTag}"` : "") +
+    `\n(ตรงปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
+    `คำสั่งราคา:\n` +
+    `- ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูด "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]]\n` +
+    `- 💰 ค่าเริ่มต้น: โชว์เฉพาะ "ราคารวมทั้งหมด" ต่อห้อง (รวมอาหารเช้าแล้ว) — ❌ ห้ามโชว์ราคาเฉลี่ยต่อคืน ❌ ห้ามแจกแจงรายคืน เว้นแต่ลูกค้าถามวิธีคิด/ทำไมราคาต่างกัน\n` +
+    `- ห้องที่ "เต็มแล้ว ❌" ต้องบอกตรง ๆ ว่าเต็ม แล้วเสนอห้องที่ว่างแทน\n` +
+    `- ราคามาจากปฏิทินจริง ห้ามคำนวณเอง/ห้ามใช้ตัวเลขในคลังทับ · ค่าสัตว์เลี้ยง 500฿/ตัว/คืน + เตียงเสริมตามกฎในคลัง (บวกเพิ่มบนยอดรวม)\n` +
+    `- ลูกค้าตกลงจอง → เก็บชื่อ-เบอร์ + [[ALERT:booking:...]] (การจองจริงยังต้องทีมยืนยัน)`;
+
+  // ----- จังหวะ 1-3: รายคืน + โปรส่วนลด (เฉพาะเมื่อลูกค้าเริ่มเจาะราคา/ขอลด) -----
+  if (DIG_RE.test(String(message)) && data.nights && data.nights >= 1 && data.nights <= 14) {
+    try {
+      const nights = data.nights;
+      // ยิงถามทีละคืน → ได้ราคา+season ต่อคืน
+      const nightly = [];
+      for (let i = 0; i < nights; i++) {
+        const nd = await fetchAvailability(addDaysStr(checkin, i), addDaysStr(checkin, i + 1));
+        nightly.push({ date: addDaysStr(checkin, i), season: String(nd.season || "").trim(), detail: nd.detail || {} });
+      }
+      // เรท Low วันธรรมดา (floor) ต่อห้อง: จากคืนใน stay ที่เป็น Low วันธรรมดาก่อน
+      const floor = {};
+      for (const n of nightly) {
+        if (isLowWeekday(n.season)) {
+          for (const [room, d] of Object.entries(n.detail)) {
+            if (floor[room] == null && d.priceNight != null) floor[room] = Number(d.priceNight);
+          }
+        }
+      }
+      // ถ้าใน stay ไม่มีคืน Low วันธรรมดาเลย แต่มีคืน Low ศ-ส → ยิงถามวันจ-พฤ ข้างเคียงมาหาเรท floor
+      //  (ลองหลายวันเรียงจากใกล้สุด เผื่อวันที่ใกล้เป็นวันหยุด/เทศกาล — สูงสุด 4 วัน)
+      const hasLowFriSat = nightly.some((n) => isLowSeason(n.season) && !isLowWeekday(n.season));
+      if (hasLowFriSat && Object.keys(floor).length === 0) {
+        const cands = [];
+        for (let off = -12; off <= 12; off++) {
+          const dstr = addDaysStr(checkin, off);
+          const dow = ymdToUTC(dstr).getUTCDay();
+          if (dow >= 1 && dow <= 4) cands.push({ dstr, dist: Math.abs(off) }); // จ-พฤ เท่านั้น
+        }
+        cands.sort((a, b) => a.dist - b.dist);
+        for (const c of cands.slice(0, 4)) {
+          try {
+            const pr = await fetchAvailability(c.dstr, addDaysStr(c.dstr, 1));
+            if (isLowWeekday(String(pr.season || ""))) {
+              for (const [room, d] of Object.entries(pr.detail || {})) {
+                if (d.priceNight != null) floor[room] = Number(d.priceNight);
+              }
+              break; // เจอ Low วันธรรมดาแล้ว พอ
+            }
+          } catch (e) { /* ลองวันถัดไป */ }
+        }
+      }
+
+      const availRooms = Object.keys(av).filter((k) => Number(av[k]) > 0);
+      const breakdownLines = [];
+      const promoLines = [];
+      for (const room of availRooms) {
+        const perNight = nightly.map((n) => {
+          const rate = n.detail[room] && n.detail[room].priceNight != null ? Number(n.detail[room].priceNight) : null;
+          const low = isLowSeason(n.season);
+          const canDiscount = low && !isLowWeekday(n.season) && floor[room] != null && rate != null && floor[room] < rate;
+          return { date: n.date, season: n.season, rate, low, canDiscount };
+        });
+        const nightsText = perNight
+          .map((p) => {
+            const tag = p.canDiscount ? ` [ลดได้→${floor[room].toLocaleString()}฿]` : p.low ? " [ราคา Low แล้ว ลดต่อไม่ได้]" : " [ลดไม่ได้]";
+            return `    ${thaiDate(p.date)} ${p.rate != null ? p.rate.toLocaleString() + "฿" : "-"} — ${p.season}${tag}`;
+          })
+          .join("\n");
+        const normalTotal = det[room] && det[room].priceTotal != null ? Number(det[room].priceTotal) : perNight.reduce((s, p) => s + (p.rate || 0), 0);
+        const discountedTotal = perNight.reduce((s, p) => s + (p.canDiscount ? floor[room] : p.rate || 0), 0);
+        breakdownLines.push(`  ${room} (รวมปกติ ${normalTotal.toLocaleString()}฿):\n${nightsText}`);
+        if (discountedTotal < normalTotal) {
+          promoLines.push(`  ${room}: ถ้าลูกค้าขอลด(โปร Low season) → รวมเหลือ ${discountedTotal.toLocaleString()}฿`);
+        }
+      }
+
+      extra +=
+        `\n\n[รายละเอียดรายคืน + โปรส่วนลด — ใช้ตามลำดับด้านล่างเท่านั้น]\n` +
+        breakdownLines.join("\n") +
+        (promoLines.length ? `\nโปรที่ลดได้ (ลดคืน ศ-ส ที่เป็น Low ให้เท่าเรทวันธรรมดา):\n` + promoLines.join("\n") : `\n(ช่วงวันนี้ไม่มีคืนที่ลดได้ตามโปร Low season)`) +
+        `\nกฎการตอบตามลำดับ (ห้ามข้ามขั้น):\n` +
+        `1) ลูกค้าถาม "คิดราคายังไง/คำนวณยังไง" → แจกแจงรายคืนตามข้างบน (ถ้าเกิน 4 คืน สรุปเป็นถูกสุด-แพงสุด + ยอดรวม) แล้วปิดด้วยยอดรวมปกติ\n` +
+        `2) ลูกค้าถาม "ทำไมราคาไม่เท่ากัน" → อธิบายว่าคืนศุกร์-เสาร์เรทสูงกว่าวันธรรมดาตามปกติของรีสอร์ท — ❌ ยังไม่ลด ❌ ห้ามเอ่ยถึงโปร\n` +
+        `3) ลูกค้า "ขอลด/บ่นว่าแพง" ตรง ๆ เท่านั้น → ยื่นโปร Low season: บอก "ยอดรวมหลังลด" ตามข้างบน + บอกว่าจัดโปร Low season ลดคืนศุกร์ให้เท่าเรทวันธรรมดา\n` +
+        `4) ❌ ห้ามเสนอ/ใบ้ส่วนลดก่อนลูกค้าขอเด็ดขาด — คืนที่ลูกค้าไม่ขอ = เก็บราคาปฏิทินปกติ (นี่คือเจตนาของโปร: ไม่ขอ=ราคาเต็ม)\n` +
+        `5) คืน [ลดไม่ได้] (วันหยุดยาว/เทศกาล/High season) ห้ามลดเด็ดขาด\n` +
+        `6) ถ้าลดตามโปรจนสุดแล้วลูกค้ายังต่อราคาอีก → "ขอเช็คกับทีมงาน" + [[ALERT:discount:...]] (ห้ามลดเกินโปร)`;
+      console.log(`avail+breakdown: ${checkin}→${checkout} nights=${nights} floorRooms=${Object.keys(floor).length}`);
+    } catch (e) {
+      console.error("breakdown/discount build error:", e.message); // เงียบ ๆ ใช้แค่จังหวะ 0
+    }
+  } else {
+    console.log(`avail check ok: ${checkin}→${checkout}`);
+  }
+  return extra;
+}
+
 const { faqEnabled, loadFaq, teachFaq, faqText } = require("./faq");
 
 // LINE userId ของแอดมินที่สอนบอทได้ (คั่นด้วยจุลภาค) เช่น "U123...,U456..."
@@ -439,49 +582,12 @@ async function handleTextMessage(event) {
     console.error("loadFaq error:", e.message);
   }
 
-  // ---- Phase 3: ลูกค้าถามห้องว่าง/จะจอง → เช็คปฏิทินจริงจากระบบเฮีย แล้วให้น้องลีฟตอบยืนยันทันที ----
-  //  (path นี้คือ LINE OA ตรง — ต้องมีบล็อกนี้เหมือน /ask ไม่งั้นจะตอบราคาจากตารางจำ + โยนทีม)
-  //  พลาด/ล่ม/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งเตือน) ลูกค้าไม่เจอ error
-  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|available|vacan|book|price|rate/i.test(String(userText))) {
-    try {
-      const q = await extractAvailabilityQuery(history);
-      if (q.ask) {
-        // กันปี พ.ศ. หลุดมา (เช่น 2569) — ปีเกินปีปัจจุบัน +2 = พ.ศ. แน่นอน → ลบ 543 เป็น ค.ศ.
-        const fixBE = (d) => {
-          const y = parseInt(d.slice(0, 4), 10);
-          const nowY = new Date().getFullYear();
-          return y > nowY + 2 ? String(y - 543) + d.slice(4) : d;
-        };
-        q.checkin = fixBE(q.checkin);
-        q.checkout = fixBE(q.checkout);
-        const data = await fetchAvailability(q.checkin, q.checkout);
-        // แปลงเป็นบรรทัดไทยชัด ๆ (ไม่ส่ง JSON ดิบ — กันอ่านเลข 0 พลาด) + ราคาจริงจากปฏิทินเรทระบบจอง
-        const av = data.available || {};
-        const det = data.detail || {};
-        const lines = Object.entries(av)
-          .map(([k, v]) => {
-            const d = det[k] || {};
-            const price = d.priceNight
-              ? ` · ${Number(d.priceNight).toLocaleString()}฿/คืน${d.priceTotal && data.nights > 1 ? ` (รวม ${data.nights} คืน = ${Number(d.priceTotal).toLocaleString()}฿)` : ""}`
-              : "";
-            return `• ${k}: ${Number(v) > 0 ? `ว่าง ${v} ห้อง ✅` : "เต็มแล้ว ❌"}${price}`;
-          })
-          .join("\n");
-        const seasonTag = String(data.season || "").trim();
-        extra +=
-          `\n\n[ข้อมูลห้องว่างจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${q.checkin} → เช็คเอาท์ ${q.checkout} (${data.nights || "?"} คืน)]\n` +
-          lines +
-          (seasonTag ? `\nป้ายช่วงวันจากระบบจอง: "${seasonTag}"` : "") +
-          `\n(ข้อมูลตรงปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
-          `คำสั่ง: ใช้ข้อมูลนี้ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูดว่า "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]] สำหรับช่วงวันนี้ · ` +
-          `🚨 ประเภทที่ขึ้น "เต็มแล้ว ❌" ต้องบอกลูกค้าตรง ๆ ว่าช่วงนั้นเต็ม ห้ามตอบว่าว่างเด็ดขาด แล้วเสนอประเภทที่ยังว่าง ✅ ในช่วงเดียวกันแทน · ` +
-          `💰 ราคา: ใช้ "ราคา/คืน และราคารวม" จากข้อมูลนี้เป็นหลัก (มาจากปฏิทินเรทจริงของระบบจอง — แหล่งความจริงเดียว ตรวจแล้วตรงทุกช่วง) ห้ามคำนวณเอง/ห้ามใช้ตารางในคลังทับตัวเลขนี้ · ทุกราคารวมอาหารเช้าแล้ว บอกลูกค้าด้วย · ค่าสัตว์เลี้ยง 500฿/ตัว/คืน และเตียงเสริม บวกเพิ่มตามกฎในคลังตามเดิม · ` +
-          `ถ้าลูกค้าตกลงจอง เก็บชื่อ-เบอร์แล้วใส่ [[ALERT:booking:...]] ให้ทีมล็อกห้องตามปกติ (การจองจริงยังต้องทีมยืนยัน)`;
-        console.log(`avail check ok (webhook): ${q.checkin}→${q.checkout} | ${JSON.stringify(av)}`);
-      }
-    } catch (e) {
-      console.error("avail check error (webhook):", e.message); // เงียบ ๆ ใช้โหมดเดิม
-    }
+  // ---- Phase 3: ห้องว่าง/ราคา/โปรส่วนลด — ผ่านฟังก์ชันกลาง (ใช้ตัวเดียวกับ /ask) ----
+  //  ล้มเหลว/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งเตือน) ลูกค้าไม่เจอ error
+  try {
+    extra += await buildAvailabilityExtra(history, userText);
+  } catch (e) {
+    console.error("avail extra error (webhook):", e.message);
   }
 
   let replyText;
@@ -552,10 +658,12 @@ app.get("/selftest", async (req, res) => {
   const avail = { keyLen: ak.length, head: ak.slice(0, 4), tail: ak.slice(-4), probe: "no-key" };
   if (ak) {
     try {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-      const dayAfter = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
-      await fetchAvailability(tomorrow, dayAfter);
+      // ถ้าส่ง ?checkin=YYYY-MM-DD&checkout=... มา = ดู JSON ดิบจาก API ช่วงนั้น (วินิจฉัยโครงสร้างราคา/รายคืน)
+      const ci = (req.query.checkin || "").trim() || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const co = (req.query.checkout || "").trim() || new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+      const raw = await fetchAvailability(ci, co);
       avail.probe = "ok";
+      if (req.query.checkin) avail.raw = raw; // โชว์ JSON ดิบเฉพาะเมื่อระบุวันเอง (ล็อกด้วยกุญแจอยู่แล้ว)
     } catch (e) {
       avail.probe = "error: " + (e && e.message ? e.message : String(e));
     }
@@ -682,48 +790,12 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     console.error("ask loadFaq error:", e.message);
   }
 
-  // ---- Phase 3: ลูกค้าถามห้องว่าง/จะจอง → เช็คปฏิทินจริงจากระบบเฮีย แล้วให้น้องลีฟตอบยืนยันทันที ----
+  // ---- Phase 3: ห้องว่าง/ราคา/โปรส่วนลด — ผ่านฟังก์ชันกลาง (ใช้ตัวเดียวกับ /webhook) ----
   //  พลาด/ล่ม/วันไม่ชัด = เงียบ ๆ กลับไปโหมดเดิม (ขอเช็คทีม + เด้งกล่องเขียว) ลูกค้าไม่เจอ error
-  if (AVAIL_API_KEY && /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|available|vacan|book|price|rate/i.test(String(message))) {
-    try {
-      const q = await extractAvailabilityQuery(history);
-      if (q.ask) {
-        // กันปี พ.ศ. หลุดมา (เช่น 2569) — ปีเกินปีปัจจุบัน +2 = พ.ศ. แน่นอน → ลบ 543 เป็น ค.ศ.
-        const fixBE = (d) => {
-          const y = parseInt(d.slice(0, 4), 10);
-          const nowY = new Date().getFullYear();
-          return y > nowY + 2 ? String(y - 543) + d.slice(4) : d;
-        };
-        q.checkin = fixBE(q.checkin);
-        q.checkout = fixBE(q.checkout);
-        const data = await fetchAvailability(q.checkin, q.checkout);
-        // แปลงเป็นบรรทัดไทยชัด ๆ (ไม่ส่ง JSON ดิบ — กันอ่านเลข 0 พลาด) + ราคาจริงจากปฏิทินเรทระบบจอง
-        const av = data.available || {};
-        const det = data.detail || {};
-        const lines = Object.entries(av)
-          .map(([k, v]) => {
-            const d = det[k] || {};
-            const price = d.priceNight
-              ? ` · ${Number(d.priceNight).toLocaleString()}฿/คืน${d.priceTotal && data.nights > 1 ? ` (รวม ${data.nights} คืน = ${Number(d.priceTotal).toLocaleString()}฿)` : ""}`
-              : "";
-            return `• ${k}: ${Number(v) > 0 ? `ว่าง ${v} ห้อง ✅` : "เต็มแล้ว ❌"}${price}`;
-          })
-          .join("\n");
-        const seasonTag = String(data.season || "").trim();
-        extra +=
-          `\n\n[ข้อมูลห้องว่างจริงจากระบบจอง ณ ขณะนี้ · เช็คอิน ${q.checkin} → เช็คเอาท์ ${q.checkout} (${data.nights || "?"} คืน)]\n` +
-          lines +
-          (seasonTag ? `\nป้ายช่วงวันจากระบบจอง: "${seasonTag}"` : "") +
-          `\n(ข้อมูลตรงปฏิทินจองจริง อัปเดตช้าสุด ~1 นาที)\n` +
-          `คำสั่ง: ใช้ข้อมูลนี้ตอบยืนยันห้องว่าง/เต็มได้ทันทีอย่างมั่นใจ — ห้ามพูดว่า "ขอเช็คกับทีมงาน" และห้ามใส่ [[ALERT:availability]] สำหรับช่วงวันนี้ · ` +
-          `🚨 ประเภทที่ขึ้น "เต็มแล้ว ❌" ต้องบอกลูกค้าตรง ๆ ว่าช่วงนั้นเต็ม ห้ามตอบว่าว่างเด็ดขาด แล้วเสนอประเภทที่ยังว่าง ✅ ในช่วงเดียวกันแทน · ` +
-          `💰 ราคา: ใช้ "ราคา/คืน และราคารวม" จากข้อมูลนี้เป็นหลัก (มาจากปฏิทินเรทจริงของระบบจอง — แหล่งความจริงเดียว ตรวจแล้วตรงทุกช่วง) ห้ามคำนวณเอง/ห้ามใช้ตารางในคลังทับตัวเลขนี้ · ทุกราคารวมอาหารเช้าแล้ว บอกลูกค้าด้วย · ค่าสัตว์เลี้ยง 500฿/ตัว/คืน และเตียงเสริม บวกเพิ่มตามกฎในคลังตามเดิม · ` +
-          `ถ้าลูกค้าตกลงจอง เก็บชื่อ-เบอร์แล้วใส่ [[ALERT:booking:...]] ให้ทีมล็อกห้องตามปกติ (การจองจริงยังต้องทีมยืนยัน)`;
-        console.log(`avail check ok: ${q.checkin}→${q.checkout} | ${JSON.stringify(av)}`);
-      }
-    } catch (e) {
-      console.error("avail check error:", e.message); // เงียบ ๆ ใช้โหมดเดิม
-    }
+  try {
+    extra += await buildAvailabilityExtra(history, message);
+  } catch (e) {
+    console.error("avail extra error:", e.message);
   }
 
   let replyText;
