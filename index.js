@@ -189,6 +189,19 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/$/, "");
 const lineClient = new line.messagingApi.MessagingApiClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
 });
+// ตัวดึงไฟล์ (รูป/วิดีโอ/เสียง) ที่ลูกค้าส่งมา — ใช้ตอนน้องลีฟ "อ่านรูป"
+const lineBlobClient = new line.messagingApi.MessagingApiBlobClient({
+  channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
+});
+// รวม Readable stream → Buffer
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", (c) => chunks.push(c));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+}
 
 // ---- โหลดรายชื่อรูปแต่ละห้อง จากโฟลเดอร์ images/ อัตโนมัติ ----
 //  รูปปก = <key>.jpg (มาก่อน), รูปเพิ่ม = <key>-2.jpg, <key>-3.jpg ...
@@ -445,23 +458,76 @@ async function handleFollow(event) {
   }
 }
 
-// ---- ลูกค้าส่ง "รูป" มา (น้องลีฟดูรูปตรง ๆ ไม่ได้) → ไม่ปล่อยเงียบ + แจ้งทีมให้เปิดดูรูปจริงในแชท ----
+// ---- ลูกค้าส่ง "รูป" มา → น้องลีฟดูรูปออกจริง (Claude sonnet-5 อ่านรูปได้) แล้วคุยตามรูป ----
 async function handleImageMessage(event) {
   const userId = event.source.userId || "unknown";
   if (ADMIN_USER_IDS.includes(userId)) return; // แอดมินส่งรูปเอง ไม่ต้องตอบ
   if (isPaused(userId)) return;                 // แอดมินคุยเองอยู่ → บอทเงียบ
-  const msg =
-    "ขอบคุณที่ส่งรูปมานะคะ 🌿 ตอนนี้น้องลีฟดูแลระบบออนไลน์และยังเปิดดูรูปโดยตรงไม่ได้ค่ะ 🙏 " +
-    "รบกวนพิมพ์บอกสั้น ๆ ได้ไหมคะว่าให้ช่วยเรื่องไหน เดี๋ยวน้องลีฟดูแลให้เลยค่ะ\n\n" +
-    "📌 หากคุณลูกค้ากำลังเข้าพักอยู่แล้ว ต้องการสอบถามข้อมูล ขอรับบริการต่าง ๆ หรือเจอปัญหาหน้างาน " +
-    "ติดต่อเจ้าหน้าที่ Room Service ที่หน้างานโดยตรงได้เลยที่เบอร์ 06-1245-2475 ทีมงานหน้างานพร้อมเข้าไปดูแลให้ทันทีค่ะ 😊";
-  await lineClient.replyMessage({ replyToken: event.replyToken, messages: [{ type: "text", text: msg }] });
-  // แจ้งทีม: น้องลีฟดูรูปไม่ได้ แต่คน(แอดมิน/ทีม)เปิดดูรูปในแชทได้ → ให้เข้าไปดู
+
+  // 1) ดึงไฟล์รูปจาก LINE → base64 (ใหญ่เกิน ~4.5MB ใช้รูปพรีวิว กันเกินลิมิต AI)
+  let b64 = "";
   try {
-    const name = await getName(userId);
-    await pushAlert(userId, name, "help", "ลูกค้าส่งรูปมา (น้องลีฟดูรูปไม่ได้) — รบกวนทีมเปิดดูรูปในแชทแล้วช่วยดูแลต่อค่ะ");
+    const buf = await streamToBuffer(await lineBlobClient.getMessageContent(event.message.id));
+    b64 = (buf.length > 4_500_000
+      ? await streamToBuffer(await lineBlobClient.getMessageContentPreview(event.message.id))
+      : buf
+    ).toString("base64");
   } catch (e) {
-    console.error("image alert error:", e.message);
+    console.error("getMessageContent error:", e.message);
+    await lineClient.replyMessage({ replyToken: event.replyToken, messages: [{ type: "text", text: "ขอโทษนะคะ 🙏 น้องลีฟเปิดดูรูปไม่สำเร็จ รบกวนพิมพ์บอกสั้น ๆ ได้ไหมคะว่าให้ช่วยเรื่องไหน เดี๋ยวดูแลให้เลยค่ะ 🌿" }] });
+    return;
+  }
+
+  // 2) ประกอบ history + รูป ส่งเข้าสมองให้ "ดูรูป" (เก็บลง history เป็นข้อความ ไม่เก็บ base64 กันส่งซ้ำ/เปลือง token)
+  let history = conversations.get(userId) || [];
+  const callHistory = [
+    ...history,
+    {
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+        { type: "text", text: "(ลูกค้าส่งรูปนี้มาค่ะ) ช่วยดูรูปแล้วคุยกับลูกค้าต่อในบทบาทน้องลีฟตามปกติ — อธิบาย/ช่วยเหลือตามสิ่งที่เห็นในรูป ถ้าดูไม่ออกจริง ๆ ให้ถามลูกค้าสุภาพ ๆ ว่าต้องการให้ช่วยเรื่องอะไร" },
+      ],
+    },
+  ];
+
+  let extra = "";
+  try { if (faqEnabled()) extra = faqText(await loadFaq()); } catch (e) { console.error("img loadFaq error:", e.message); }
+
+  let replyText;
+  try {
+    replyText = await generateReply(callHistory, extra);
+  } catch (e) {
+    console.error("img generateReply error:", e.message);
+    replyText = "";
+  }
+
+  const alerts = [];
+  let messages;
+  if (!replyText) {
+    messages = [{ type: "text", text: "ขอโทษนะคะ 🙏 น้องลีฟดูรูปให้ไม่ทันนิดนึง เดี๋ยวทีมงานมาดูแลต่อให้นะคะ 😊" }];
+    alerts.push({ type: "help", detail: "ลูกค้าส่งรูปมาแต่ AI ดูรูปไม่สำเร็จ — รบกวนทีมเปิดดูรูปในแชทและช่วยดูแลต่อค่ะ" });
+  } else {
+    replyText = replyText
+      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]\]/gi, (_m, type, detail) => {
+        alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
+        return "";
+      })
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!replyText) replyText = "รับเรื่องแล้วค่ะ เดี๋ยวน้องลีฟดูแลให้นะคะ 😊";
+    history.push({ role: "user", content: "(ลูกค้าส่งรูปมา 1 รูป)" });
+    history.push({ role: "assistant", content: replyText });
+    if (history.length > MAX_TURNS * 2) history = history.slice(-MAX_TURNS * 2);
+    conversations.set(userId, history);
+    messages = buildMessages(userId, replyText);
+    if (messages.length === 0) messages = [{ type: "text", text: replyText }];
+  }
+
+  await lineClient.replyMessage({ replyToken: event.replyToken, messages });
+  if (alerts.length > 0) {
+    const name = await getName(userId);
+    for (const a of alerts) await pushAlert(userId, name, a.type, a.detail);
   }
 }
 
