@@ -762,12 +762,33 @@ app.get("/selftest", async (req, res) => {
       avail.probe = "error: " + (e && e.message ? e.message : String(e));
     }
   }
+  // วินิจฉัยแจ้งเตือนกลุ่ม: บอกว่าตั้ง token/group ไหม + ถ้า ?testgroup=1 ลองยิงเข้ากลุ่มจริงแล้วบอกผล/error
+  const alertCfg = {
+    pushTokenLen: ALERT_PUSH_TOKEN.length,
+    pushTokenHead: ALERT_PUSH_TOKEN.slice(0, 4),
+    groupId: ALERT_GROUP_ID ? ALERT_GROUP_ID.slice(0, 6) + "…" + ALERT_GROUP_ID.slice(-4) : "(ไม่ตั้ง)",
+    clientReady: !!alertClient,
+    push: "not-tested",
+  };
+  if (req.query.testgroup === "1") {
+    if (!alertClient) alertCfg.push = "no-token (ALERT_PUSH_TOKEN ไม่ได้ตั้ง)";
+    else if (!ALERT_GROUP_ID) alertCfg.push = "no-group (ALERT_GROUP_ID ไม่ได้ตั้ง)";
+    else {
+      try {
+        await alertClient.pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: "🔔 ทดสอบแจ้งเตือนเข้ากลุ่มจากน้องลีฟค่ะ (ข้อความทดสอบ)" }] });
+        alertCfg.push = "ok ✅ ส่งเข้ากลุ่มสำเร็จ";
+      } catch (e) {
+        alertCfg.push = "error: " + (e && e.message ? e.message : String(e));
+      }
+    }
+  }
   res.json({
     version: "v7-sales",
     keyCleanLen: clean.length,
     adminCount: ADMIN_USER_IDS.length,
     faq,
     avail,
+    alertCfg,
   });
 });
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
