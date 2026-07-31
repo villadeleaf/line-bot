@@ -193,6 +193,14 @@ const lineClient = new line.messagingApi.MessagingApiClient({
 const lineBlobClient = new line.messagingApi.MessagingApiBlobClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
 });
+// ---- แจ้งเตือนเข้า "กลุ่มไลน์ทีม" (ใช้ token ของ OA จริงที่อยู่ในกลุ่ม เช่น @villadeleaf) ----
+//  ตั้ง env: ALERT_PUSH_TOKEN = Channel Access Token ของ OA ที่อยู่ในกลุ่ม · ALERT_GROUP_ID = C8efd...
+//  ไม่ตั้ง = ไม่เด้งกลุ่ม (พฤติกรรมเดิม เด้งแชทแอดมินอย่างเดียว)
+const ALERT_PUSH_TOKEN = (process.env.ALERT_PUSH_TOKEN || "").trim();
+const ALERT_GROUP_ID = (process.env.ALERT_GROUP_ID || "").trim();
+const alertClient = ALERT_PUSH_TOKEN
+  ? new line.messagingApi.MessagingApiClient({ channelAccessToken: ALERT_PUSH_TOKEN })
+  : null;
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -905,8 +913,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
       needsHuman = true;
       alertType = m[1].toLowerCase();
       alertDetail = (m[2] || "").trim();
-      // โหมดทดสอบ (test:true) → ไม่เด้งเตือนแอดมิน (ทดสอบเงียบ ๆ) แต่ยังส่ง needsHuman กลับให้ดู
-      if (ADMIN_USER_IDS.length && !req.body.test) {
+      // โหมดทดสอบ (test:true) → ไม่เด้งเตือน (ทดสอบเงียบ ๆ) แต่ยังส่ง needsHuman กลับให้ดู
+      if (!req.body.test) {
         const titles = {
           booking: "🔔 ลูกค้าสนใจจอง",
           help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
@@ -914,11 +922,22 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
           discount: "💸 ลูกค้าขอส่วนลด/โปร",
         };
         const custName = String(req.body.name || "ลูกค้า").trim();
-        const alertText = `${titles[alertType] || titles.help}\n👤 ${custName}\n${alertDetail}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
-        for (const admin of ADMIN_USER_IDS) {
-          lineClient
-            .pushMessage({ to: admin, messages: [{ type: "text", text: alertText }] })
-            .catch((e) => console.error("ask alert push:", e.message));
+        const title = titles[alertType] || titles.help;
+        // (1) เด้งเข้า "กลุ่มไลน์ทีม" (ผ่าน token OA จริงที่อยู่ในกลุ่ม) — ตัวหลัก
+        if (alertClient && ALERT_GROUP_ID) {
+          const groupText = `${title}\n👤 ${custName}\n${alertDetail}\n\n💬 เปิดแชทลูกค้าใน LINE OA แล้วพิมพ์ตอบได้เลยค่ะ`.slice(0, 1500);
+          alertClient
+            .pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: groupText }] })
+            .catch((e) => console.error("group alert push:", e.message));
+        }
+        // (2) สำรอง: เด้งเข้าแชทแอดมิน (OA เดิม) — เผื่อยังไม่ตั้งกลุ่ม
+        if (ADMIN_USER_IDS.length) {
+          const alertText = `${title}\n👤 ${custName}\n${alertDetail}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
+          for (const admin of ADMIN_USER_IDS) {
+            lineClient
+              .pushMessage({ to: admin, messages: [{ type: "text", text: alertText }] })
+              .catch((e) => console.error("ask alert push:", e.message));
+          }
         }
       }
     }
