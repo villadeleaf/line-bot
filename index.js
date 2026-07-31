@@ -1029,3 +1029,16 @@ app.post("/webhook", express.raw({ type: "*/*" }), (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Bot listening on port ${port}`));
+
+// ---- Keep-alive: ping ตัวเองทุก ~10 นาที กัน Render free "หลับ" ตอนไม่มีคนใช้ ----
+//  (Render free spin-down เมื่อไม่มี inbound request ~15 นาที → ข้อความแรกหลังหลับช้า/หาย)
+//  คนใช้เยอะจริงค่อยอัปเกรด Render เป็น paid (ไม่หลับเลย) แล้วเอาบล็อกนี้ออกก็ได้
+if (PUBLIC_URL) {
+  const KEEPALIVE_MS = 10 * 60 * 1000; // 10 นาที (ก่อน 15 นาทีที่จะหลับ)
+  setInterval(() => {
+    fetch(PUBLIC_URL, { method: "GET" }).catch(() => {});
+  }, KEEPALIVE_MS);
+  console.log(`keep-alive: ping ${PUBLIC_URL} ทุก ${KEEPALIVE_MS / 60000} นาที`);
+} else {
+  console.log("keep-alive: ปิด (ไม่ได้ตั้ง PUBLIC_URL)");
+}
