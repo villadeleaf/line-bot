@@ -304,7 +304,7 @@ async function generateReply(history, extraKnowledge = "") {
     try {
       response = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 4000,
+        max_tokens: 8000, // เผื่อ thinking กินเยอะตอนคิดคอมโบกรุ๊ปใหญ่ (กัน stop=max_tokens แล้ว text ว่าง) · จ่ายตาม token ที่ออกจริงเท่านั้น
         system,
         messages: history,
       });
