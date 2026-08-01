@@ -987,8 +987,10 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
             .pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: groupText }] })
             .catch((e) => console.error("group alert push:", e.message));
         }
-        // (2) สำรอง: เด้งเข้าแชทแอดมิน (OA เดิม) — เผื่อยังไม่ตั้งกลุ่ม
-        if (ADMIN_USER_IDS.length) {
+        // (2) สำรอง: เด้งเข้าแชทแอดมิน (OA เดิม) — เฉพาะตอน "ยังไม่ได้ตั้งกลุ่ม" เท่านั้น
+        //     ถ้าตั้งกลุ่มแล้ว (alertClient+ALERT_GROUP_ID) จะเด้งแค่กลุ่มอย่างเดียว กันแจ้งซ้ำ
+        const groupActive = !!(alertClient && ALERT_GROUP_ID);
+        if (!groupActive && ADMIN_USER_IDS.length) {
           const alertText = `${title}\n👤 ${custName}\n${alertDetail}\n\n👉 เข้าไปตอบลูกค้าในระบบได้เลยนะคะ`.slice(0, 1500);
           for (const admin of ADMIN_USER_IDS) {
             lineClient
