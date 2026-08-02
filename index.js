@@ -45,6 +45,8 @@ const isLowWeekday = (season) => { const s = String(season); return /low/i.test(
 
 // เมื่อไหร่ถึงเข้าโหมดเช็คห้องว่าง/ราคา (รวมคำถามต่อ: ลด/แพง/คิดยังไง/ทำไม เพื่อให้ follow-up ทริกเกอร์บล็อกได้)
 const AVAIL_RE = /ว่าง|เต็ม|จอง|เข้าพัก|ราคา|เรท|เท่าไหร่|เท่าไร|กี่บาท|คืนละ|available|vacan|book|price|rate|ลด|แพง|โปร|ส่วนลด|ถูก|คิดราคา|คิดยังไง|คำนวณ|ทำไม|ไม่เท่า|รายคืน|แจกแจง|discount/i;
+// ลูกค้า "คุยเรื่องห้อง/ขอแนะนำห้อง" — ต้องเช็คปฏิทินด้วย (กันน้องลีฟเชียร์ห้องที่เต็มในวันที่ลูกค้าบอกไว้แล้ว)
+const ROOM_RE = /ห้อง|วิลล่า|บ้านพัก|แนะนำ|กี่ท่าน|กี่คน|นอน|แบบไหน|แบบอื่น|อีกแบบ|หลัง|เตียงเสริม|luxury|pool|villa|sky|river|premier|family|king|panoram|pet/i;
 // เมื่อไหร่ถึงต้องดึงรายคืน+โปร (จังหวะ 1-3) นอกเหนือจากยอดรวม (จังหวะ 0)
 const DIG_RE = /คิด|คำนวณ|ทำไม|ไม่เท่า|ลด|แพง|ถูกกว่า|โปร|ส่วนลด|ต่อรอง|รายคืน|แจกแจง|breakdown|discount|เท่าวันธรรมดา|วันธรรมดา/i;
 
@@ -54,7 +56,7 @@ const DIG_RE = /คิด|คำนวณ|ทำไม|ไม่เท่า|ล
 //  ล้มเหลว/วันไม่ชัด = คืน "" เงียบ ๆ → กลับโหมดเดิม (ขอเช็คทีม) ลูกค้าไม่เจอ error
 async function buildAvailabilityExtra(history, message) {
   if (!AVAIL_API_KEY) return "";
-  if (!AVAIL_RE.test(String(message))) return "";
+  if (!AVAIL_RE.test(String(message)) && !ROOM_RE.test(String(message))) return "";
   const q = await extractAvailabilityQuery(history);
   if (!q || !q.ask) return "";
   const checkin = fixBE(q.checkin);
