@@ -280,24 +280,25 @@ function buildMessages(userId, replyText) {
   const extUrls = []; // รูปจาก URL ภายนอก (เช่นรูปเมนูจากระบบเฮีย)
   const text = replyText
     // [[IMG:key:more]] = ส่งรูปชุดถัดไป (4 รูป)
-    .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => {
+    .replace(/\[\[IMG:([a-z-]+):more\]{1,2}/gi, (_m, k) => {
       if (IMAGES[k]) files.push(...nextBatch(userId, k));
       return "";
     })
     // [[IMG:key]] = ส่งรูปปก 1 รูป
-    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => {
+    .replace(/\[\[IMG:([a-z-]+)\]{1,2}/gi, (_m, k) => {
       if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]);
       return "";
     })
     // [[MENUIMG:ชื่อเมนู]] = รูปเมนูจริงจาก API ระบบร้าน (สูงสุด 2)
-    .replace(/\[\[MENUIMG:([^\]]+)\]\]/gi, (_m, name) => {
+    .replace(/\[\[MENUIMG:([^\]]+)\]{1,2}/gi, (_m, name) => {
       const u = findMenuImage(name);
       if (u && extUrls.length < 2) extUrls.push(u);
       return "";
     })
     // 🛡️ กันเหนียว: ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ที่หลุดรอดมา ไม่ให้ลูกค้าเห็นเด็ดขาด
     // (เผื่อบอทเพี้ยน/รีสตาร์ต แล้ว [[ALERT:...]] หรือมาร์กเกอร์อื่นไม่ถูกลบต้นทาง)
-    .replace(/\[\[[^\]]*\]\]/g, "")
+    .replace(/\[\[[^\]]*\]{1,2}/g, "")
+    .replace(/\[\[\s*(?:ALERT|IMG|MENUIMG)\b[^\]]*\]{0,2}/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
@@ -320,9 +321,9 @@ function extractImageUrls(userId, replyText) {
   const files = [];
   const extUrls = []; // รูปเมนูจริงจาก API ระบบร้าน ([[MENUIMG:ชื่อ]])
   (replyText || "")
-    .replace(/\[\[IMG:([a-z-]+):more\]\]/gi, (_m, k) => { if (IMAGES[k]) files.push(...nextBatch(userId, k)); return ""; })
-    .replace(/\[\[IMG:([a-z-]+)\]\]/gi, (_m, k) => { if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]); return ""; })
-    .replace(/\[\[MENUIMG:([^\]]+)\]\]/gi, (_m, name) => { const u = findMenuImage(name); if (u && extUrls.length < 2) extUrls.push(u); return ""; });
+    .replace(/\[\[IMG:([a-z-]+):more\]{1,2}/gi, (_m, k) => { if (IMAGES[k]) files.push(...nextBatch(userId, k)); return ""; })
+    .replace(/\[\[IMG:([a-z-]+)\]{1,2}/gi, (_m, k) => { if (IMAGES[k] && IMAGES[k][0]) files.push(IMAGES[k][0]); return ""; })
+    .replace(/\[\[MENUIMG:([^\]]+)\]{1,2}/gi, (_m, name) => { const u = findMenuImage(name); if (u && extUrls.length < 2) extUrls.push(u); return ""; });
   const fileUrls = PUBLIC_URL ? files.map((f) => `${PUBLIC_URL}/images/${encodeURIComponent(f)}`) : [];
   return [...fileUrls, ...extUrls].slice(0, 4);
 }
@@ -523,7 +524,7 @@ async function handleImageMessage(event) {
     alerts.push({ type: "help", detail: "ลูกค้าส่งรูปมาแต่ AI ดูรูปไม่สำเร็จ — รบกวนทีมเปิดดูรูปในแชทและช่วยดูแลต่อค่ะ" });
   } else {
     replyText = replyText
-      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]\]/gi, (_m, type, detail) => {
+      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]{1,2}/gi, (_m, type, detail) => {
         alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
         return "";
       })
@@ -626,7 +627,7 @@ async function handleTextMessage(event) {
       console.error("relay generateReply error:", e.message);
       relayText = adminAnswer;
     }
-    relayText = (relayText || adminAnswer).replace(/\[\[ALERT:[^\]]*\]\]/gi, "").trim();
+    relayText = (relayText || adminAnswer).replace(/\[\[ALERT:[^\]]*\]{1,2}/gi, "").trim();
     try {
       const msgs = buildMessages(target.custId, relayText);
       await lineClient.pushMessage({
@@ -709,7 +710,7 @@ async function handleTextMessage(event) {
   } else {
     // ดึงมาร์กเกอร์ [[ALERT:booking:...]] / [[ALERT:help:...]] ออก (ลูกค้าไม่เห็น) เก็บไว้แจ้งแอดมิน
     replyText = replyText
-      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]\]/gi, (_m, type, detail) => {
+      .replace(/\[\[ALERT:(booking|help|lead|availability|discount):([^\]]*)\]{1,2}/gi, (_m, type, detail) => {
         alerts.push({ type: type.toLowerCase(), detail: (detail || "").trim() });
         return "";
       })
@@ -967,7 +968,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   let alertType = null;
   let alertDetail = "";
   try {
-    const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount):([^\]]*)\]\]/i);
+    const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount):([^\]]*)\]{1,2}/i);
     if (m) {
       needsHuman = true;
       alertType = m[1].toLowerCase();
