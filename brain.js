@@ -12,8 +12,6 @@ const path = require("path");
 //  claude-haiku-4-5  = ถูก + เร็ว (แนะนำ)
 //  claude-sonnet-5   = ฉลาดกว่า แต่แพงกว่า
 const MODEL = "claude-sonnet-5";
-// รุ่นเร็วสำหรับงานง่าย ๆ (แกะวันที่จากแชท) — ลดเวลาตอบรวม ไม่ต้องใช้ Sonnet ทั้งคู่
-const FAST_MODEL = "claude-haiku-4-5";
 
 // ---- โหลด "ความรู้" ของร้าน ----
 let knowledge = fs.readFileSync(
@@ -430,7 +428,7 @@ async function extractAvailabilityQuery(history) {
 {"ask":true,"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD"}
 หรือถ้าไม่รู้วันเข้าพักเลย: {"ask":false}`;
   const response = await anthropic.messages.create({
-    model: FAST_MODEL, // งานแกะวันที่ = ง่าย ใช้รุ่นเร็วพอ (ลดเวลาตอบรวม ~หลายวินาที)
+    model: MODEL, // ใช้ Sonnet เท่าเดิม — แกะวันที่เป็นจุดสำคัญ (กันบั๊กปี พ.ศ./ค.ศ.) ยอมช้ากว่าเพื่อความแม่น
     max_tokens: 200,
     system: [{ type: "text", text: sys }],
     messages: [{ role: "user", content: recent || "-" }],
