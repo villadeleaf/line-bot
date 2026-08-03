@@ -12,8 +12,6 @@ const path = require("path");
 //  claude-haiku-4-5  = ถูก + เร็ว (แนะนำ)
 //  claude-sonnet-5   = ฉลาดกว่า แต่แพงกว่า
 const MODEL = "claude-sonnet-5";
-// รุ่นเร็วสำหรับงานแกะวันที่ (JSON ง่าย ๆ) — ลดเวลาตอบห้องว่างลง ~8 วิ · เรียบเรียงคำตอบยังใช้ Sonnet
-const FAST_MODEL = "claude-haiku-4-5";
 
 // ---- โหลด "ความรู้" ของร้าน ----
 let knowledge = fs.readFileSync(
@@ -430,7 +428,7 @@ async function extractAvailabilityQuery(history) {
 {"ask":true,"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD"}
 หรือถ้าไม่รู้วันเข้าพักเลย: {"ask":false}`;
   const response = await anthropic.messages.create({
-    model: FAST_MODEL, // Haiku เร็วพอสำหรับแกะวันที่ (มี guard ปี ค.ศ. + fixBE กันบั๊ก พ.ศ. อยู่แล้ว)
+    model: MODEL, // ใช้ Sonnet เหมือนขั้นเรียบเรียง — คงคุณภาพ/ความแม่นวันที่ (ยอมช้ากว่า พึ่ง timeout 50วิ ฝั่งเฮีย)
     max_tokens: 200,
     system: [{ type: "text", text: sys }],
     messages: [{ role: "user", content: recent || "-" }],
