@@ -205,6 +205,8 @@ const alertClient = ALERT_PUSH_TOKEN
   : null;
 // Group ID จริงล่าสุดที่ webhook เห็น (ไว้หา ALERT_GROUP_ID ที่ถูกต้อง ผ่าน /selftest)
 let lastGroupSeen = null;
+// ตัวดักจับ /ask 20 รายการล่าสุด (ไว้เช็คผ่าน /selftest ว่า FB/LINE ยิงเข้า /ask จริงไหม)
+const recentAsk = [];
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -828,6 +830,7 @@ app.get("/selftest", async (req, res) => {
     avail,
     alertCfg,
     lastGroupSeen,
+    recentAsk: recentAsk.slice(-15),
   });
 });
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
@@ -842,6 +845,16 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   if (!userId || !message) {
     return res.status(400).json({ error: "userId and message required" });
   }
+
+  // 🕵️ ดักจับ: บันทึกว่า /ask ถูกเรียก (ดูผ่าน /selftest ว่า FB/LINE ยิงเข้า /ask จริงไหม)
+  recentAsk.push({
+    at: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 19),
+    userId: String(userId).slice(0, 14),
+    name: String(req.body.name || "").slice(0, 24),
+    msg: String(message).slice(0, 30),
+    fromAdmin: !!fromAdmin,
+  });
+  if (recentAsk.length > 20) recentAsk.shift();
 
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
   //   ระบบเฮียยิง { fromAdmin:true, userId:<ไอดีลูกค้า>, message:<คำตอบดิบของทีม> } → ได้ { reply } กลับไปส่งลูกค้าจริง
