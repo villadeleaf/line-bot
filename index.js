@@ -923,7 +923,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
       console.error("ask fromAdmin error:", e.message);
       return res.status(200).json({ reply: "" }); // ระบบเฮีย fallback: ส่งคำตอบดิบของทีมเอง
     }
-    const relayClean = (relayText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+    const relayClean = (relayText || "").replace(/\[\[[^\]]*\]{1,2}/g, "").replace(/\[\[\s*(?:ALERT|IMG|MENUIMG)\b[^\]]*\]{0,2}/gi, "").replace(/\n{3,}/g, "\n\n").trim();
     if (relayClean) {
       custHistory.push({ role: "assistant", content: relayClean });
       conversations.set(userId, custHistory);
@@ -1021,7 +1021,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   }
 
   // ตอบกลับเป็นข้อความล้วน — ลบมาร์กเกอร์ระบบทุกชนิด [[...]] ออก (ลูกค้าไม่เห็น)
-  const clean = (replyText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  const clean = (replyText || "").replace(/\[\[[^\]]*\]{1,2}/g, "").replace(/\[\[\s*(?:ALERT|IMG|MENUIMG)\b[^\]]*\]{0,2}/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   if (clean) {
     history.push({ role: "assistant", content: clean });
     conversations.set(userId, history);
@@ -1054,7 +1054,7 @@ app.post("/ask-fb", express.json({ limit: "256kb" }), async (req, res) => {
     console.error("ask-fb error:", e.message);
     return res.status(200).json({ reply: "" }); // ให้ระบบต้นทาง fallback เป็นคน
   }
-  const clean = (replyText || "").replace(/\[\[[^\]]*\]\]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  const clean = (replyText || "").replace(/\[\[[^\]]*\]{1,2}/g, "").replace(/\[\[\s*(?:ALERT|IMG|MENUIMG)\b[^\]]*\]{0,2}/gi, "").replace(/\n{3,}/g, "\n\n").trim();
   if (clean) {
     history.push({ role: "assistant", content: clean });
     conversations.set(key, history);
