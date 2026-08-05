@@ -997,8 +997,13 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
         const custName = String(req.body.name || "ลูกค้า").trim();
         const title = titles[alertType] || titles.help;
         // (1) เด้งเข้า "กลุ่มไลน์ทีม" (ผ่าน token OA จริงที่อยู่ในกลุ่ม) — ตัวหลัก
+        //   booking = สรุปการจองพร้อมก๊อป + เลขบัญชี (แอดมินก๊อปส่งลูกค้าเอง · น้องลีฟไม่ส่งให้ลูกค้า)
+        const bankBlock = "🏦 ธนาคารกสิกรไทย\nเลขบัญชี 230-1-67564-2\nชื่อบัญชี บจก. วิลลาเดอลีฟ";
+        const groupText = (alertType === "booking"
+          ? `📋 สรุปการจอง (ก๊อปส่งลูกค้าได้เลยค่ะ)\n\n${alertDetail}\n\n${bankBlock}\n\nเมื่อโอนแล้วรบกวนส่งสลิปกลับมานะคะ\n⚠️ น้องลีฟยังไม่ได้ส่งให้ลูกค้า — แอดมินก๊อปส่งเองค่ะ`
+          : `${title}\n👤 ${custName}\n${alertDetail}\n\n💬 เปิดแชทลูกค้าใน LINE OA แล้วพิมพ์ตอบได้เลยค่ะ`
+        ).slice(0, 1900);
         if (alertClient && ALERT_GROUP_ID) {
-          const groupText = `${title}\n👤 ${custName}\n${alertDetail}\n\n💬 เปิดแชทลูกค้าใน LINE OA แล้วพิมพ์ตอบได้เลยค่ะ`.slice(0, 1500);
           alertClient
             .pushMessage({ to: ALERT_GROUP_ID, messages: [{ type: "text", text: groupText }] })
             .catch((e) => console.error("group alert push:", e.message));
