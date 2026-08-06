@@ -278,7 +278,7 @@ async function generateReply(history, extraKnowledge = "") {
     {
       type: "text",
       text: SYSTEM_PROMPT,
-      cache_control: { type: "ephemeral" }, // ประหยัดค่าใช้จ่ายจากข้อมูลที่ส่งซ้ำ
+      cache_control: { type: "ephemeral", ttl: "1h" }, // แคช 1 ชม. (ความรู้ 43K ไม่ต้องโหลดใหม่บ่อย = ประหยัดตัวหลัก) · 5m เดิมหมดอายุบ่อยเพราะลูกค้าตอบเว้นช่วง
     },
     { type: "text", text: currentContext() }, // วันที่ (ไม่แคช เพราะเปลี่ยนทุกวัน)
   ];
