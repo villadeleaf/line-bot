@@ -305,22 +305,42 @@ async function generateReply(history, extraKnowledge = "") {
     }
   }
 
+  // เลือกความลึกการคิด (effort) เพื่อคุมค่าใช้จ่าย โดยคำตอบยังเหมือนเดิม:
+  //  • คุยทั่วไป (ทักทาย/ที่ตั้ง/รูป/ถามราคาห้องเดียว ที่ราคามาจาก API) → medium = ประหยัด
+  //  • ตอนคิดเงิน/จองจริง (มีเบอร์โทร / จอง / มัดจำ / ยอดรวม / กรุ๊ป / หลายห้อง / เตียงเสริม) → high = คิดเลขแม่น
+  const recentText = history
+    .slice(-6)
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .join(" ");
+  const hasPhone = /0\d{8,9}/.test(recentText.replace(/[\s\-.()]/g, ""));
+  const MONEY_RE = /จอง|มัดจำ|ยอดรวม|รวมเท่า|รวมทั้งหมด|ทั้งหมดกี่|ทั้งหมดเท่า|สรุป|เตียงเสริม|กรุ๊ป|เหมา|หลายห้อง|กี่ห้อง|\d+\s*ห้อง/;
+  const effort = hasPhone || MONEY_RE.test(recentText) ? "high" : "medium";
+
   // ลองเรียก AI ใหม่เองอีกชั้น เผื่อ API overload/สะดุด (529/429/5xx) — หน่วงเพิ่มขึ้นเรื่อย ๆ
   let response;
   let lastErr;
+  let useEffort = true; // ถ้า API ไม่รับ output_config (400) จะปิดแล้วลองใหม่ = กันบอทพัง
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      response = await anthropic.messages.create({
+      const params = {
         model: MODEL,
         max_tokens: 8000, // เผื่อ thinking กินเยอะตอนคิดคอมโบกรุ๊ปใหญ่ (กัน stop=max_tokens แล้ว text ว่าง) · จ่ายตาม token ที่ออกจริงเท่านั้น
         system,
         messages: history,
-      });
+      };
+      if (useEffort) params.output_config = { effort }; // medium=คุยทั่วไป (ประหยัด) · high=คิดเงิน/จอง (แม่นเลข) — คำตอบเหมือนเดิม
+      response = await anthropic.messages.create(params);
       lastErr = null;
       break;
     } catch (err) {
       lastErr = err;
       const status = err && err.status;
+      // API ไม่รับ output_config → ปิด effort แล้วลองใหม่ทันที (ตอบแบบเดิม ไม่ error ใส่ลูกค้า)
+      if (status === 400 && useEffort) {
+        useEffort = false;
+        console.warn("output_config ถูกปฏิเสธ — ตอบต่อแบบไม่ใส่ effort");
+        continue;
+      }
       const retriable = status === 429 || status === 529 || (status >= 500 && status < 600) || err.name === "APIConnectionError";
       if (!retriable || attempt === 2) throw err;
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); // 1.5s, 3s
