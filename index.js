@@ -56,7 +56,15 @@ const DIG_RE = /คิด|คำนวณ|ทำไม|ไม่เท่า|ล
 //  ล้มเหลว/วันไม่ชัด = คืน "" เงียบ ๆ → กลับโหมดเดิม (ขอเช็คทีม) ลูกค้าไม่เจอ error
 async function buildAvailabilityExtra(history, message) {
   if (!AVAIL_API_KEY) return "";
-  if (!AVAIL_RE.test(String(message)) && !ROOM_RE.test(String(message))) return "";
+  // ทริกเกอร์เช็คห้องว่าง — เดิมดูแค่คำใน "ข้อความล่าสุด" → พลาดตอนลูกค้า:
+  //   • ตอบสั้น ("ไม่มีค่ะ", "ค่ะ")  • ให้วันที่/จำนวนคนที่ไม่มีคำว่าห้อง/ราคา ("2 ท่าน วันที่ 10-12 สค.")
+  // ใหม่: + จับรูปแบบวันที่/จำนวนคน + ทำงานต่อเนื่องเมื่อบทสนทนาอยู่ในโหมดจองแล้ว (มีคำคีย์ใน history ล่าสุด)
+  // ตัวกรองจริงยังอยู่ที่ extractAvailabilityQuery (ต้องมีวันที่ชัด q.ask) → ทริกเกอร์กว้างขึ้นแต่ไม่ยิงมั่ว
+  const msg = String(message);
+  const DATE_RE = /\d{1,2}\s*[-–/]\s*\d{1,2}|วันที่|กี่คืน|\d+\s*คืน|\d+\s*ท่าน|\d+\s*คน|พรุ่งนี้|มะรืน|เสาร์|อาทิตย์|สุดสัปดาห์|ม\.?ค|ก\.?พ|มี\.?ค|เม\.?ย|พ\.?ค|มิ\.?ย|ก\.?ค|ส\.?ค|ก\.?ย|ต\.?ค|พ\.?ย|ธ\.?ค/;
+  const recentText = history.slice(-6).map((m) => (typeof m.content === "string" ? m.content : "")).join(" ");
+  const inBookingFlow = AVAIL_RE.test(recentText) || ROOM_RE.test(recentText);
+  if (!AVAIL_RE.test(msg) && !ROOM_RE.test(msg) && !DATE_RE.test(msg) && !inBookingFlow) return "";
   const q = await extractAvailabilityQuery(history);
   if (!q || !q.ask) return "";
   const checkin = fixBE(q.checkin);
