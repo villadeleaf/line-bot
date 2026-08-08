@@ -967,6 +967,33 @@ app.get("/leaf/api/leads", dashAuth, (_req, res) => {
   leads.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   res.json({ leads });
 });
+// เช็กว่า token ของบอทเป็น OA ไหน (ส่งหาลูกค้า @villadeleaf ได้ไหม)
+app.get("/leaf/api/whoami", dashAuth, async (_req, res) => {
+  try { const i = await lineClient.getBotInfo(); res.json({ displayName: i.displayName, basicId: i.basicId, userId: (i.userId || "").slice(0, 8) + "…" }); }
+  catch (e) { res.status(200).json({ error: (e && e.message) || String(e) }); }
+});
+// #1 ตอบลูกค้าจากห้องแชท (แอดมินพิมพ์+ยืนยันแล้วเท่านั้น → ส่งเข้า LINE)
+app.post("/leaf/api/reply", dashAuth, express.json({ limit: "16kb" }), async (req, res) => {
+  const userId = String((req.body && req.body.userId) || "");
+  const message = String((req.body && req.body.message) || "").trim();
+  if (!userId || !message) return res.status(400).json({ ok: false, error: "ต้องมี userId + ข้อความ" });
+  try {
+    await lineClient.pushMessage({ to: userId, messages: [{ type: "text", text: message }] });
+    const h = conversations.get(userId) || [];
+    h.push({ role: "assistant", content: message });
+    conversations.set(userId, h);
+    const m = chatMeta.get(userId) || {};
+    m.lastMsg = "(แอดมินตอบ) " + message.slice(0, 45);
+    m.needsHuman = false;
+    m.at = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 19);
+    chatMeta.set(userId, m);
+    res.json({ ok: true });
+  } catch (e) {
+    const st = e && (e.status || e.statusCode);
+    const body = e && (typeof e.body === "string" ? e.body : JSON.stringify(e.body || ""));
+    res.status(200).json({ ok: false, error: (st ? st + " " : "") + (body || (e && e.message) || String(e)) });
+  }
+});
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
 //  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}
 //  น้องลีฟจำบทสนทนาต่อเนื่องด้วย userId (ใช้ conversations Map เดียวกับ LINE)

@@ -135,7 +135,7 @@
         <div class="rowbar"><button class="mini" onclick="backChats()">‹ กลับ</button><div class="grow"><h2 id="chatName" style="font-size:17px;margin:0"></h2></div></div>
         <div class="card chat">
           <div class="thread" id="custThread"></div>
-          <div class="comp"><input placeholder="ตอบลูกค้าจากที่นี่ — เร็ว ๆ นี้ (ต้องต่อสิทธิ์ส่งกับเฮีย)" disabled><button class="send" disabled>➤</button></div>
+          <div class="comp"><input id="custBox" placeholder="พิมพ์ตอบลูกค้า... (กดส่งแล้วยืนยันก่อนถึงลูกค้า)" onkeydown="if(event.key==='Enter')sendReply()"><button class="send" id="custSend" onclick="sendReply()">➤</button></div>
         </div>
       </div>
     </div>
@@ -220,6 +220,13 @@
         el.appendChild(d); }); }).catch(function(){}); }
   function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
   function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; loadChats(); }
+  function sendReply(){ var box=document.getElementById('custBox'); var v=box.value.trim(); if(!v||!curChatId)return;
+    if(!confirm('ส่งข้อความนี้ถึงลูกค้าจริงนะคะ?\n\n“'+v+'”')) return;
+    box.disabled=true; document.getElementById('custSend').disabled=true;
+    api('reply',{method:'POST',body:JSON.stringify({userId:curChatId,message:v})}).then(function(r){
+      if(r.ok){ box.value=''; loadThread(); toast('✅ ส่งถึงลูกค้าแล้ว'); }
+      else{ toast('❌ ส่งไม่ได้: '+(r.error||'')); }
+    }).catch(function(){ toast('❌ ส่งไม่สำเร็จ'); }).finally(function(){ box.disabled=false; document.getElementById('custSend').disabled=false; box.focus(); }); }
   function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML='';
       var s=r.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
       if(p.length){ var sm=document.createElement('div'); sm.style.cssText='align-self:center;background:var(--accent-soft);color:var(--accent-strong);border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;margin-bottom:4px'; sm.textContent='📋 สรุป: '+p.join('  ·  '); th.appendChild(sm); }
