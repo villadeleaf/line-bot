@@ -283,6 +283,27 @@ const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 
 const conversations = new Map();
 // ข้อมูลย่อรายแชท (ไว้โชว์รายชื่อในห้องแชท /leaf) — userId → {name, at, lastMsg, needsHuman}
 const chatMeta = new Map();
+
+// สกัด "สรุปการจอง" จากบทสนทนาลูกค้าแบบเบา ๆ (จำนวนคน/วัน/สัตว์เลี้ยง/ห้องที่พูดถึง) — ไม่ใช้ AI
+function extractSummary(history) {
+  const all = (history || []).map((m) => (typeof m.content === "string" ? m.content : "")).join(" ");
+  const cust = (history || []).filter((m) => m.role === "user" && typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0).map((m) => m.content).join(" ");
+  const g = cust.match(/(\d+)\s*(?:ท่าน|คน)/);
+  const guests = g ? g[1] + " ท่าน" : "";
+  const d = cust.match(/\d{1,2}\s*[-–/]\s*\d{1,2}(?:\s*[-–/]\s*\d{2,4})?|วันที่\s*\d{1,2}|พรุ่งนี้|มะรืน|สุดสัปดาห์|เสาร์|อาทิตย์|\d{1,2}\s*ส\.?ค|\d{1,2}\s*ก\.?ค/);
+  const date = d ? d[0].trim() : "";
+  let pet = "";
+  if (/ไม่มี(?:หมา|แมว|สัตว|น้อง)/.test(cust) || (/มีสัตว์เลี้ยงไหม|มีน้องหมา/.test(all) && /ไม่มี(?:ค่ะ|คับ|ครับ|ค่า)?$|ไม่มี /.test(cust))) pet = "ไม่มีสัตว์เลี้ยง";
+  else if (/หมา|แมว|สัตว์เลี้ยง|เพ็ท|\bpet\b/i.test(cust)) pet = "มีสัตว์เลี้ยง";
+  const rooms = [];
+  [["Premier King", /premier\s*king|พรีเมียร์/i], ["Sky Riverview", /sky\s*riverview|วิวแม่น้ำ/i], ["Luxury Villa", /luxury|ลักซ/i], ["Pool Villa", /pool\s*villa|พูลวิลล่า/i], ["Premier Family", /family|แฟมิลี/i]].forEach(([n, re]) => { if (re.test(all)) rooms.push(n); });
+  return { guests, date, pet, rooms: rooms.join(", ") };
+}
+// ลูกค้ารายนี้มี "แววจอง" ไหม (ไว้คัดเข้ากระดาน lead)
+function hasBookingIntent(history) {
+  const t = (history || []).map((m) => (typeof m.content === "string" ? m.content : "")).join(" ");
+  return /จอง|สนใจ|ห้องพัก|ราคา|ห้องว่าง|กี่คืน|เข้าพัก|\d+\s*(?:ท่าน|คน|คืน)/.test(t);
+}
 const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
 const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
 // เก็บว่าข้อความแจ้งเตือนที่ส่งให้แอดมิน (messageId) = ของลูกค้าคนไหน → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ใคร
@@ -919,7 +940,18 @@ app.get("/leaf/api/chat", dashAuth, (req, res) => {
   const messages = h
     .filter((m) => typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0)
     .map((m) => ({ from: m.role === "assistant" ? "bot" : "cust", text: m.content }));
-  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, messages });
+  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, summary: extractSummary(h), messages });
+});
+// กระดาน lead: ลูกค้าที่มีแววจอง (สนใจแต่ยังไม่ปิด) พร้อมสรุปข้อมูล
+app.get("/leaf/api/leads", dashAuth, (_req, res) => {
+  const leads = [];
+  chatMeta.forEach((v, k) => {
+    const h = conversations.get(k) || [];
+    if (!hasBookingIntent(h)) return;
+    leads.push({ userId: k, name: v.name || "", pictureUrl: v.pictureUrl || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman, summary: extractSummary(h) });
+  });
+  leads.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  res.json({ leads });
 });
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
 //  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}

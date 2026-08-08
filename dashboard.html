@@ -110,6 +110,7 @@
   </div>
   <div class="tabs">
     <button class="tab active" data-v="chat" onclick="tab('chat')">💬 แชท</button>
+    <button class="tab" data-v="leads" onclick="tab('leads')">📋 ลูกค้า</button>
     <button class="tab" data-v="test" onclick="tab('test')">🧪 ทดลอง</button>
     <button class="tab" data-v="teach" onclick="tab('teach')">📚 สอน</button>
     <button class="tab" data-v="status" onclick="tab('status')">📊 สถานะ</button>
@@ -129,6 +130,12 @@
           <div class="comp"><input placeholder="ตอบลูกค้าจากที่นี่ — เร็ว ๆ นี้ (ต้องต่อสิทธิ์ส่งกับเฮีย)" disabled><button class="send" disabled>➤</button></div>
         </div>
       </div>
+    </div>
+
+    <!-- LEADS -->
+    <div class="view" id="v-leads">
+      <h2>📋 กระดานลูกค้า (lead)</h2><div class="sub">ลูกค้าที่มีแววจอง — น้องลีฟสรุปให้แล้ว ตามปิดการขายได้เลย 🌿</div>
+      <div id="leadList"><div class="empty">กำลังโหลด…</div></div>
     </div>
 
     <!-- TEST -->
@@ -185,14 +192,13 @@
   document.getElementById('pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
   function logout(){ sessionStorage.removeItem('leafkey'); location.reload(); }
 
-  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); stopChatAuto(); if(v==='chat'){loadChats();startChatAuto();} if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
+  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); if(v==='chat')loadChats(); if(v==='leads')loadLeads(); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
 
-  function boot(){ resetTest(); loadChats(); startChatAuto(); }
+  function boot(){ resetTest(); loadChats(); loadLeads(); startAuto(); }
 
-  /* CHAT (ห้องแชทลูกค้าจริง — อัปเดตสด) */
-  var chatTimer=null, curChatId=null;
-  function startChatAuto(){ stopChatAuto(); chatTimer=setInterval(function(){ if(curChatId) loadThread(); else loadChats(); },5000); }
-  function stopChatAuto(){ if(chatTimer){clearInterval(chatTimer);chatTimer=null;} }
+  /* CHAT + LEADS (อัปเดตสดอัตโนมัติทุก 5 วิ) */
+  var autoTimer=null, curChatId=null;
+  function startAuto(){ if(autoTimer)clearInterval(autoTimer); autoTimer=setInterval(function(){ var a=document.querySelector('.tab.active'); a=a?a.dataset.v:''; if(a==='chat'){ if(curChatId)loadThread(); else loadChats(); } else if(a==='leads'){ loadLeads(); } },5000); }
   function loadChats(){ api('chats').then(function(r){ var list=r.chats||[]; var el=document.getElementById('chatList');
       if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีแชทลูกค้า — จะขึ้นเองเมื่อมีลูกค้าทักเข้ามา 🌿</div>'; return; }
       el.innerHTML=''; list.forEach(function(c){ var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer';
@@ -204,7 +210,24 @@
         el.appendChild(d); }); }).catch(function(){}); }
   function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
   function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; loadChats(); }
-  function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML=''; (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
+  function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML='';
+      var s=r.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
+      if(p.length){ var sm=document.createElement('div'); sm.style.cssText='align-self:center;background:var(--accent-soft);color:var(--accent-strong);border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;margin-bottom:4px'; sm.textContent='📋 สรุป: '+p.join('  ·  '); th.appendChild(sm); }
+      (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
+
+  /* LEADS */
+  function loadLeads(){ api('leads').then(function(r){ var list=r.leads||[]; var el=document.getElementById('leadList');
+      if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีลูกค้าที่มีแววจอง — จะขึ้นเองเมื่อมีคนถามเรื่องจอง/ราคา 🌿</div>'; return; }
+      el.innerHTML='';
+      list.forEach(function(c){ var s=c.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
+        var nm=c.name||'ลูกค้า';
+        var av=c.pictureUrl?'<img src="'+esc(c.pictureUrl)+'" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex:none">':'<div style="width:44px;height:44px;border-radius:50%;background:var(--surface-3);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none">'+esc(nm.slice(0,1).toUpperCase())+'</div>';
+        var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:15px 17px;margin-bottom:12px;cursor:pointer';
+        d.onclick=function(){ tab('chat'); openChat(c.userId,nm); };
+        d.innerHTML='<div style="display:flex;gap:12px;align-items:center;margin-bottom:'+(p.length?'10px':'0')+'">'+av+'<div style="flex:1;min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div>'+(c.needsHuman?'<span class="mini" style="color:var(--warn-ink);flex:none">🙋 ต้องตอบ</span>':'<span class="mini" style="color:var(--accent-strong);flex:none">🌿 บอทดูแล</span>')+'</div>'+
+          (p.length?'<div style="background:var(--accent-soft);color:var(--accent-strong);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600">📋 '+p.join('  ·  ')+'</div>':'');
+        el.appendChild(d);
+      }); }).catch(function(){}); }
 
   /* TEST */
   var testMsgs=[];
