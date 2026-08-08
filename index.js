@@ -1001,11 +1001,11 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   let alertType = null;
   let alertDetail = "";
   try {
-    const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount):([^\]]*)\]{1,2}/i);
+    const m = (replyText || "").match(/\[\[ALERT:(booking|help|availability|discount|note):([^\]]*)\]{1,2}/i);
     if (m) {
-      needsHuman = true;
       alertType = m[1].toLowerCase();
       alertDetail = (m[2] || "").trim();
+      needsHuman = alertType !== "note"; // note = แจ้งกลุ่มเฉย ๆ ไม่เด้งกล่องเขียว (น้องลีฟตอบลูกค้าเต็มแล้ว ทีมแค่รับรู้เพื่ออัปเดตบิล)
       // โหมดทดสอบ (test:true) → ไม่เด้งเตือน (ทดสอบเงียบ ๆ) แต่ยังส่ง needsHuman กลับให้ดู
       if (!req.body.test) {
         const titles = {
@@ -1013,6 +1013,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
           help: "⚠️ ลูกค้าถามอะไรที่น้องลีฟตอบไม่ได้",
           availability: "🏨 ลูกค้าถามห้องว่าง",
           discount: "💸 ลูกค้าขอส่วนลด/โปร",
+          note: "🔔 อัปเดตการจอง (แจ้งให้ทราบ)",
         };
         const custName = String(req.body.name || "ลูกค้า").trim();
         const title = titles[alertType] || titles.help;
@@ -1021,6 +1022,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
         const bankBlock = "🏦 ธนาคารกสิกรไทย\nเลขบัญชี 230-1-67564-2\nชื่อบัญชี บจก. วิลลาเดอลีฟ";
         const groupText = (alertType === "booking"
           ? `📋 สรุปการจอง (ก๊อปส่งลูกค้าได้เลยค่ะ)\n\n${alertDetail.replace(/\s*\/\s*/g, "\n")}\n\n${bankBlock}\n\nเมื่อโอนแล้วรบกวนส่งสลิปกลับมานะคะ\n⚠️ น้องลีฟยังไม่ได้ส่งให้ลูกค้า — แอดมินก๊อปส่งเองค่ะ`
+          : alertType === "note"
+          ? `${title}\n👤 ${custName}\n${alertDetail}\n\n✅ น้องลีฟตอบลูกค้าให้แล้ว — แจ้งเพื่ออัปเดตข้อมูล/บิลตอนเช็คเอาท์เท่านั้น ไม่ต้องตอบลูกค้าค่ะ`
           : `${title}\n👤 ${custName}\n${alertDetail}\n\n💬 เปิดแชทลูกค้าใน LINE OA แล้วพิมพ์ตอบได้เลยค่ะ`
         ).slice(0, 1900);
         if (alertClient && ALERT_GROUP_ID) {
