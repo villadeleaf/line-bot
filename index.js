@@ -942,6 +942,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     name: String(req.body.name || "").slice(0, 24),
     msg: String(message).slice(0, 30),
     fromAdmin: !!fromAdmin,
+    bodyKeys: Object.keys(req.body || {}).join(","),
     result: "(processing…)",
   };
   recentAsk.push(askRec);
@@ -1139,7 +1140,9 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   //  needsHuman=true + type → บอกระบบเฮียให้เด้งเคสนี้ขึ้นกล่องเขียวให้ทีมเข้ามาช่วย
   askRec.result = "✅ ตอบ " + clean.length + " ตัวอักษร" + (needsHuman ? " +needsHuman(" + alertType + ")" : "") + (images && images.length ? " +" + images.length + "รูป" : "");
   askRec.ms = Date.now() - _t0;
-  chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 40), pictureUrl: String(req.body.pictureUrl || req.body.picture || "").slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: needsHuman });
+  const _b = req.body || {};
+  const _pic = _b.pictureUrl || _b.picture || _b.pictureURL || _b.picUrl || _b.avatar || _b.photo || _b.image || _b.profileImage || _b.img || _b.avatarUrl || "";
+  chatMeta.set(userId, { name: String(_b.name || "").slice(0, 40), pictureUrl: String(_pic).slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: needsHuman });
   res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail, images });
 });
 
