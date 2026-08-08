@@ -211,6 +211,10 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || "").trim().replace(/\/$/, "");
 const lineClient = new line.messagingApi.MessagingApiClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
 });
+// token สำหรับ "ตอบลูกค้า @villadeleaf จากหน้า /leaf" — ตั้ง env REPLY_TOKEN = Channel Access Token ของ @villadeleaf ตัวจริง
+// ถ้ายังไม่ตั้ง จะ fallback เป็น token เดิม (OA ทดสอบ ส่งลูกค้าจริงไม่ได้)
+const REPLY_TOKEN = (process.env.REPLY_TOKEN || "").trim();
+const replyClient = REPLY_TOKEN ? new line.messagingApi.MessagingApiClient({ channelAccessToken: REPLY_TOKEN }) : lineClient;
 // ตัวดึงไฟล์ (รูป/วิดีโอ/เสียง) ที่ลูกค้าส่งมา — ใช้ตอนน้องลีฟ "อ่านรูป"
 const lineBlobClient = new line.messagingApi.MessagingApiBlobClient({
   channelAccessToken: LINE_CHANNEL_ACCESS_TOKEN,
@@ -969,8 +973,8 @@ app.get("/leaf/api/leads", dashAuth, (_req, res) => {
 });
 // เช็กว่า token ของบอทเป็น OA ไหน (ส่งหาลูกค้า @villadeleaf ได้ไหม)
 app.get("/leaf/api/whoami", dashAuth, async (_req, res) => {
-  try { const i = await lineClient.getBotInfo(); res.json({ displayName: i.displayName, basicId: i.basicId, userId: (i.userId || "").slice(0, 8) + "…" }); }
-  catch (e) { res.status(200).json({ error: (e && e.message) || String(e) }); }
+  try { const i = await replyClient.getBotInfo(); res.json({ displayName: i.displayName, basicId: i.basicId, usingReplyToken: !!REPLY_TOKEN }); }
+  catch (e) { res.status(200).json({ error: (e && e.message) || String(e), usingReplyToken: !!REPLY_TOKEN }); }
 });
 // #1 ตอบลูกค้าจากห้องแชท (แอดมินพิมพ์+ยืนยันแล้วเท่านั้น → ส่งเข้า LINE)
 app.post("/leaf/api/reply", dashAuth, express.json({ limit: "16kb" }), async (req, res) => {
@@ -978,7 +982,7 @@ app.post("/leaf/api/reply", dashAuth, express.json({ limit: "16kb" }), async (re
   const message = String((req.body && req.body.message) || "").trim();
   if (!userId || !message) return res.status(400).json({ ok: false, error: "ต้องมี userId + ข้อความ" });
   try {
-    await lineClient.pushMessage({ to: userId, messages: [{ type: "text", text: message }] });
+    await replyClient.pushMessage({ to: userId, messages: [{ type: "text", text: message }] });
     const h = conversations.get(userId) || [];
     h.push({ role: "assistant", content: message });
     conversations.set(userId, h);
