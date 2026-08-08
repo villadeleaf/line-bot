@@ -890,6 +890,20 @@ function dashAuth(req, res, next) {
   next();
 }
 app.get("/leaf", (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+// PWA: ให้ติดตั้งลงหน้าจอโฮม + เลขแดง (ต้อง public ให้เบราว์เซอร์โหลดได้ ไม่ผ่าน auth)
+app.get("/leaf/manifest.webmanifest", (_req, res) => {
+  res.type("application/manifest+json").json({
+    name: "ห้องน้องลีฟ", short_name: "น้องลีฟ", start_url: "/leaf", scope: "/leaf",
+    display: "standalone", background_color: "#FAF6EE", theme_color: "#3F6E4C",
+    icons: [
+      { src: "/leaf/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+      { src: "/leaf/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+    ],
+  });
+});
+app.get("/leaf/icon.svg", (_req, res) => res.type("image/svg+xml").send('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#3F6E4C"/><circle cx="256" cy="256" r="150" fill="#E6EFE4"/><text x="256" y="356" font-size="210" text-anchor="middle" font-family="sans-serif">🌿</text></svg>'));
+app.get("/leaf/icon-512.png", (_req, res) => res.sendFile(path.join(__dirname, "leaf-icon-512.png")));
+app.get("/leaf/sw.js", (_req, res) => res.type("application/javascript").send("self.addEventListener('install',function(e){self.skipWaiting();});self.addEventListener('activate',function(e){self.clients.claim();});self.addEventListener('fetch',function(e){});"));
 app.get("/leaf/api/ping", dashAuth, (_req, res) => res.json({ ok: true }));
 
 app.get("/leaf/api/faq", dashAuth, async (_req, res) => {
