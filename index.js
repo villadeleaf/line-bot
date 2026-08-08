@@ -869,13 +869,16 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   }
 
   // 🕵️ ดักจับ: บันทึกว่า /ask ถูกเรียก (ดูผ่าน /selftest ว่า FB/LINE ยิงเข้า /ask จริงไหม)
-  recentAsk.push({
+  const _t0 = Date.now();
+  const askRec = {
     at: new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 19),
     userId: String(userId).slice(0, 14),
     name: String(req.body.name || "").slice(0, 24),
     msg: String(message).slice(0, 30),
     fromAdmin: !!fromAdmin,
-  });
+    result: "(processing…)",
+  };
+  recentAsk.push(askRec);
   if (recentAsk.length > 20) recentAsk.shift();
 
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
@@ -992,6 +995,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     replyText = await generateReply(history, extra);
   } catch (e) {
     console.error("ask error:", e.message);
+    askRec.result = "❌ ERROR: " + (e && e.message ? e.message : String(e));
+    askRec.ms = Date.now() - _t0;
     // AI ขัดข้อง → บอกระบบเฮียให้เด้งกล่องเขียว (needsHuman) + fallback เป็นคนตอบ
     return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: req.body.test ? "AI error: " + (e && e.message ? e.message : String(e)) : "ระบบ AI ขัดข้องชั่วคราว รบกวนทีมงานเข้าไปดูแลลูกค้าต่อค่ะ" });
   }
@@ -1059,6 +1064,8 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   //  images → รูปที่น้องลีฟอยากส่ง (ระบบเฮียเอา url ไปส่งเป็น LINE image message)
   const images = extractImageUrls(userId, replyText);
   //  needsHuman=true + type → บอกระบบเฮียให้เด้งเคสนี้ขึ้นกล่องเขียวให้ทีมเข้ามาช่วย
+  askRec.result = "✅ ตอบ " + clean.length + " ตัวอักษร" + (needsHuman ? " +needsHuman(" + alertType + ")" : "") + (images && images.length ? " +" + images.length + "รูป" : "");
+  askRec.ms = Date.now() - _t0;
   res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail, images });
 });
 
