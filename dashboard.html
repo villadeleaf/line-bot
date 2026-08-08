@@ -109,14 +109,30 @@
     <button class="out" title="ออกจากระบบ" onclick="logout()">⎋</button>
   </div>
   <div class="tabs">
-    <button class="tab active" data-v="test" onclick="tab('test')">🧪 ทดลอง</button>
+    <button class="tab active" data-v="chat" onclick="tab('chat')">💬 แชท</button>
+    <button class="tab" data-v="test" onclick="tab('test')">🧪 ทดลอง</button>
     <button class="tab" data-v="teach" onclick="tab('teach')">📚 สอน</button>
     <button class="tab" data-v="status" onclick="tab('status')">📊 สถานะ</button>
   </div>
 
   <div class="wrap">
+    <!-- CHAT -->
+    <div class="view active" id="v-chat">
+      <div id="chatListWrap">
+        <div class="rowbar"><div class="grow"><h2>💬 ห้องแชท</h2><div class="sub" style="margin:0">บทสนทนากับลูกค้าจริง — อัปเดตสดอัตโนมัติ</div></div><span class="mini" style="color:var(--accent-strong)">🟢 สด</span></div>
+        <div id="chatList"><div class="empty">กำลังโหลด…</div></div>
+      </div>
+      <div id="chatThreadWrap" style="display:none">
+        <div class="rowbar"><button class="mini" onclick="backChats()">‹ กลับ</button><div class="grow"><h2 id="chatName" style="font-size:17px;margin:0"></h2></div></div>
+        <div class="card chat">
+          <div class="thread" id="custThread"></div>
+          <div class="comp"><input placeholder="ตอบลูกค้าจากที่นี่ — เร็ว ๆ นี้ (ต้องต่อสิทธิ์ส่งกับเฮีย)" disabled><button class="send" disabled>➤</button></div>
+        </div>
+      </div>
+    </div>
+
     <!-- TEST -->
-    <div class="view active" id="v-test">
+    <div class="view" id="v-test">
       <div class="rowbar"><div class="grow"><h2>🧪 ห้องทดลอง</h2><div class="sub" style="margin:0">คุยกับน้องลีฟทดสอบ — ลูกค้าไม่เห็น ปลอดภัย 100%</div></div><button class="mini" onclick="resetTest()">🔄 รีเซ็ต</button></div>
       <div class="card chat">
         <div class="thread" id="testThread"></div>
@@ -169,9 +185,24 @@
   document.getElementById('pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
   function logout(){ sessionStorage.removeItem('leafkey'); location.reload(); }
 
-  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
+  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); stopChatAuto(); if(v==='chat'){loadChats();startChatAuto();} if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
 
-  function boot(){ resetTest(); loadFaq(); loadStatus(); }
+  function boot(){ resetTest(); loadChats(); startChatAuto(); }
+
+  /* CHAT (ห้องแชทลูกค้าจริง — อัปเดตสด) */
+  var chatTimer=null, curChatId=null;
+  function startChatAuto(){ stopChatAuto(); chatTimer=setInterval(function(){ if(curChatId) loadThread(); else loadChats(); },5000); }
+  function stopChatAuto(){ if(chatTimer){clearInterval(chatTimer);chatTimer=null;} }
+  function loadChats(){ api('chats').then(function(r){ var list=r.chats||[]; var el=document.getElementById('chatList');
+      if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีแชทลูกค้า — จะขึ้นเองเมื่อมีลูกค้าทักเข้ามา 🌿</div>'; return; }
+      el.innerHTML=''; list.forEach(function(c){ var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer';
+        d.onclick=function(){openChat(c.userId,c.name);};
+        var badge=c.needsHuman?'<span class="mini" style="color:var(--warn-ink);padding:3px 9px;flex:none">🙋 ต้องตอบ</span>':'<span class="mini" style="color:var(--accent-strong);padding:3px 9px;flex:none">🌿 บอทดูแล</span>';
+        d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700">'+esc(c.name||'ลูกค้า')+'</div><div style="color:var(--ink-2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div><span style="color:var(--ink-3);font-size:12px;flex:none">'+esc(c.at||'')+'</span>'+badge;
+        el.appendChild(d); }); }).catch(function(){}); }
+  function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
+  function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; loadChats(); }
+  function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML=''; (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
 
   /* TEST */
   var testMsgs=[];

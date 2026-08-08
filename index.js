@@ -281,6 +281,8 @@ const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 
 
 // ---- ความจำการสนทนา + ความคืบหน้าการส่งรูป (ต่อคน) ----
 const conversations = new Map();
+// ข้อมูลย่อรายแชท (ไว้โชว์รายชื่อในห้องแชท /leaf) — userId → {name, at, lastMsg, needsHuman}
+const chatMeta = new Map();
 const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
 const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
 // เก็บว่าข้อความแจ้งเตือนที่ส่งให้แอดมิน (messageId) = ของลูกค้าคนไหน → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ใคร
@@ -903,6 +905,22 @@ app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res)
   console.log("dashboard: botPaused =", botPaused);
   res.json({ paused: botPaused });
 });
+// ห้องแชท: รายชื่อบทสนทนาลูกค้า (สดจาก chatMeta) + อ่านบทสนทนารายคน (จาก conversations)
+app.get("/leaf/api/chats", dashAuth, (_req, res) => {
+  const list = [];
+  chatMeta.forEach((v, k) => list.push({ userId: k, name: v.name || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman }));
+  list.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  res.json({ chats: list.slice(0, 50) });
+});
+app.get("/leaf/api/chat", dashAuth, (req, res) => {
+  const uid = String(req.query.userId || "");
+  const h = conversations.get(uid) || [];
+  const meta = chatMeta.get(uid) || {};
+  const messages = h
+    .filter((m) => typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0)
+    .map((m) => ({ from: m.role === "assistant" ? "bot" : "cust", text: m.content }));
+  res.json({ name: meta.name || "", needsHuman: !!meta.needsHuman, messages });
+});
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
 //  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}
 //  น้องลีฟจำบทสนทนาต่อเนื่องด้วย userId (ใช้ conversations Map เดียวกับ LINE)
@@ -1121,6 +1139,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   //  needsHuman=true + type → บอกระบบเฮียให้เด้งเคสนี้ขึ้นกล่องเขียวให้ทีมเข้ามาช่วย
   askRec.result = "✅ ตอบ " + clean.length + " ตัวอักษร" + (needsHuman ? " +needsHuman(" + alertType + ")" : "") + (images && images.length ? " +" + images.length + "รูป" : "");
   askRec.ms = Date.now() - _t0;
+  chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 24), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: needsHuman });
   res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail, images });
 });
 
