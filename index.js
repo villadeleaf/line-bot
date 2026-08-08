@@ -766,9 +766,7 @@ app.get("/", (_req, res) => res.send("LINE Claude bot is running ✅"));
 //  ใช้เช็คว่ารุ่นโค้ดไหน deploy อยู่ + กุญแจสะอาดไหม + FAQ เชื่อมติดไหม
 const SELFTEST_KEY = (process.env.FAQ_SECRET || "").trim();
 app.get("/selftest", async (req, res) => {
-  // คีย์วินิจฉัยชั่วคราว (ไว้เช็ค recentAsk ว่าระบบเฮียยิงเข้า /ask จริงไหม) — ลบออกหลังแก้เสร็จ
-  const _k = req.query.key || "";
-  if (_k !== "diag-leaf-2026" && (!SELFTEST_KEY || _k !== SELFTEST_KEY)) {
+  if (!SELFTEST_KEY || (req.query.key || "") !== SELFTEST_KEY) {
     return res.status(403).json({ error: "unauthorized" });
   }
   const clean = (process.env.ANTHROPIC_API_KEY || "").replace(/[^A-Za-z0-9_-]/g, "");
