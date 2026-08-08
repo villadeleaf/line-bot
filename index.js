@@ -227,6 +227,9 @@ const alertClient = ALERT_PUSH_TOKEN
 let lastGroupSeen = null;
 // ตัวดักจับ /ask 20 รายการล่าสุด (ไว้เช็คผ่าน /selftest ว่า FB/LINE ยิงเข้า /ask จริงไหม)
 const recentAsk = [];
+// พักน้องลีฟทั้งระบบ (แอดมินกดจากหน้า /leaf) — รีเซ็ตเป็น "เปิด" เมื่อ deploy ใหม่
+let botPaused = false;
+const bootAt = Date.now();
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -853,6 +856,53 @@ app.get("/selftest", async (req, res) => {
     recentAsk: recentAsk.slice(-15),
   });
 });
+
+// ============ หน้าเว็บ "ห้องน้องลีฟ" (/leaf dashboard) ============
+//  แอดมินใช้จัดการน้องลีฟเอง: ทดลองคุย · สอน FAQ · ดูสถานะ · พักบอท
+//  ล็อกด้วยรหัส DASH_PASS (env) — ค่าเริ่มต้น 1234 (แนะนำตั้ง env ใหม่ทีหลัง)
+const DASH_PASS = (process.env.DASH_PASS || "1234").trim();
+function dashAuth(req, res, next) {
+  const k = req.headers["x-leaf-key"] || req.query.key || "";
+  if (k !== DASH_PASS) return res.status(401).json({ error: "unauthorized" });
+  next();
+}
+app.get("/leaf", (_req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+app.get("/leaf/api/ping", dashAuth, (_req, res) => res.json({ ok: true }));
+
+app.get("/leaf/api/faq", dashAuth, async (_req, res) => {
+  try { const items = faqEnabled() ? await loadFaq() : []; res.json({ items }); }
+  catch (e) { res.status(200).json({ items: [], error: e.message }); }
+});
+app.post("/leaf/api/faq", dashAuth, express.json({ limit: "64kb" }), async (req, res) => {
+  const q = String((req.body && req.body.q) || "").trim();
+  const a = String((req.body && req.body.a) || "").trim();
+  if (!q || !a) return res.status(400).json({ ok: false, error: "ใส่คำถามและคำตอบ" });
+  try { await teachFaq(q, a); res.json({ ok: true }); }
+  catch (e) { res.status(200).json({ ok: false, error: e.message }); }
+});
+app.post("/leaf/api/test", dashAuth, express.json({ limit: "64kb" }), async (req, res) => {
+  const message = String((req.body && req.body.message) || "").trim();
+  if (!message) return res.status(400).json({ reply: "" });
+  try {
+    const history = [{ role: "user", content: message }];
+    let extra = "";
+    try { if (faqEnabled()) extra = faqText(await loadFaq()); } catch (_e) {}
+    try { extra += await buildAvailabilityExtra(history, message); } catch (_e) {}
+    let reply = await generateReply(history, extra);
+    reply = (reply || "").replace(/\[\[[^\]]*\]{1,2}/g, "").replace(/\[\[\s*(?:ALERT|IMG|MENUIMG)\b[^\]]*\]{0,2}/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+    res.json({ reply });
+  } catch (e) { res.status(200).json({ reply: "", error: e.message }); }
+});
+app.get("/leaf/api/status", dashAuth, async (_req, res) => {
+  let faqCount = null;
+  try { if (faqEnabled()) faqCount = (await loadFaq()).length; } catch (_e) {}
+  res.json({ online: true, paused: botPaused, faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
+});
+app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
+  botPaused = !!(req.body && req.body.on);
+  console.log("dashboard: botPaused =", botPaused);
+  res.json({ paused: botPaused });
+});
 // ---- ช่องให้ระบบหัวหน้าเรียกใช้น้องลีฟ (แบบ B): ส่งข้อความลูกค้ามา → คืนคำตอบน้องลีฟ ----
 //  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}
 //  น้องลีฟจำบทสนทนาต่อเนื่องด้วย userId (ใช้ conversations Map เดียวกับ LINE)
@@ -878,6 +928,13 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   };
   recentAsk.push(askRec);
   if (recentAsk.length > 20) recentAsk.shift();
+
+  // แอดมินพักน้องลีฟทั้งระบบจากหน้า /leaf → คืน reply ว่าง (ระบบเฮียไม่ส่ง = บอทเงียบ ทีมตอบเอง)
+  if (botPaused && !fromAdmin && !req.body.test) {
+    askRec.result = "⏸️ พักบอท (แอดมินปิดจาก /leaf)";
+    askRec.ms = Date.now() - _t0;
+    return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "น้องลีฟถูกพักชั่วคราวโดยแอดมิน", paused: true });
+  }
 
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
   //   ระบบเฮียยิง { fromAdmin:true, userId:<ไอดีลูกค้า>, message:<คำตอบดิบของทีม> } → ได้ { reply } กลับไปส่งลูกค้าจริง

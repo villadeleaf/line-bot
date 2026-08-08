@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ห้องน้องลีฟ</title>
+<style>
+  :root{
+    --bg:#FAF6EE;--surface:#FFF;--surface-2:#F4EFE3;--surface-3:#EFE8D9;--border:#E7DFCE;--border-soft:#F0E9DA;
+    --ink:#2C2A22;--ink-2:#736C5B;--ink-3:#A79E89;--accent:#3F6E4C;--accent-strong:#2E5238;--accent-soft:#E6EFE4;
+    --cust:#F1ECDF;--bot:#E6EFE4;--bot-ink:#28402F;--warn:#C0743A;--warn-soft:#FAEEDD;--warn-ink:#8A4F24;--online:#3E9E6E;
+    --shadow:0 1px 2px rgba(60,50,30,.05),0 6px 20px rgba(60,50,30,.06);
+    --font:-apple-system,BlinkMacSystemFont,"Sukhumvit Set","Segoe UI","Noto Sans Thai","Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#211F1A;--surface:#2A2822;--surface-2:#25231D;--surface-3:#2F2C25;--border:#3A362D;--border-soft:#332F28;
+    --ink:#F1ECE0;--ink-2:#ADA491;--ink-3:#7C7462;--accent:#7CB187;--accent-strong:#A5D0AC;--accent-soft:#2C3A2E;
+    --cust:#33302A;--bot:#2C3A2E;--bot-ink:#CDE6D2;--warn:#D69158;--warn-soft:#3A2E22;--warn-ink:#E7B486;--online:#5FBE8C;
+    --shadow:0 1px 2px rgba(0,0,0,.2),0 8px 24px rgba(0,0,0,.28);}}
+  *{box-sizing:border-box}html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer}
+  /* login */
+  #login{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:radial-gradient(120% 120% at 50% 0%,var(--surface-2),var(--bg));padding:24px}
+  .card-login{background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);width:100%;max-width:350px;padding:34px 30px;text-align:center}
+  .mark{width:60px;height:60px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 16px}
+  h1{margin:0 0 4px;font-size:20px}#login p{margin:0 0 22px;color:var(--ink-2);font-size:13px}
+  #pw{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--ink);font-size:16px;letter-spacing:.15em;text-align:center;outline:none;margin-bottom:14px}
+  #pw:focus{border-color:var(--accent)}
+  .btn{width:100%;padding:12px;border:none;border-radius:11px;background:var(--accent);color:#fff;font-size:15px;font-weight:600}
+  .btn:hover{filter:brightness(1.06)}
+  .err{color:var(--warn);font-size:12px;margin-top:10px;min-height:16px}
+  /* app */
+  #app{display:none;flex-direction:column;height:100%}
+  .top{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}
+  .brand .d{width:26px;height:26px;border-radius:8px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:15px}
+  .status{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2)}
+  .live{width:8px;height:8px;border-radius:50%;background:var(--online);box-shadow:0 0 0 3px color-mix(in srgb,var(--online) 25%,transparent)}
+  .out{border:1px solid var(--border);background:var(--surface-2);color:var(--ink-2);border-radius:9px;width:34px;height:34px;font-size:15px}
+  .tabs{display:flex;gap:6px;padding:10px 14px 0;background:var(--surface);border-bottom:1px solid var(--border)}
+  .tab{flex:1;max-width:170px;padding:11px 6px;border:none;background:transparent;color:var(--ink-2);font-weight:600;font-size:13.5px;border-bottom:2.5px solid transparent}
+  .tab.active{color:var(--accent-strong);border-bottom-color:var(--accent)}
+  .wrap{flex:1;overflow-y:auto;padding:20px 16px;max-width:760px;width:100%;margin:0 auto}
+  .view{display:none}.view.active{display:block}
+  h2{font-size:19px;margin:0 0 4px}.sub{color:var(--ink-2);font-size:13px;margin:0 0 18px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow)}
+  /* test chat */
+  .chat{display:flex;flex-direction:column;height:min(60vh,460px)}
+  .thread{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .row{max-width:82%;padding:10px 14px;border-radius:16px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;box-shadow:var(--shadow)}
+  .row.c{align-self:flex-end;background:var(--cust);border-bottom-right-radius:5px}
+  .row.b{align-self:flex-start;background:var(--bot);color:var(--bot-ink);border-bottom-left-radius:5px}
+  .row.s{align-self:center;background:transparent;box-shadow:none;border:1px dashed var(--border);border-radius:999px;color:var(--ink-2);font-size:12px;padding:6px 14px}
+  .who{font-size:11px;color:var(--ink-3);font-weight:600;margin:0 0 3px}
+  .comp{display:flex;gap:9px;padding:11px;border-top:1px solid var(--border)}
+  .comp input{flex:1;padding:11px 13px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--ink);font-size:14px;outline:none}
+  .comp input:focus{border-color:var(--accent)}
+  .send{width:42px;border:none;border-radius:11px;background:var(--accent);color:#fff;font-size:16px}
+  .send:disabled{opacity:.5}
+  .rowbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .rowbar .grow{flex:1}
+  .mini{border:1px solid var(--border);background:var(--surface-2);color:var(--ink-2);border-radius:9px;padding:8px 13px;font-size:13px;font-weight:600}
+  /* faq */
+  .field{margin-bottom:10px}.field label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:5px}
+  .field input,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:13.5px;outline:none}
+  .field textarea{min-height:64px;resize:vertical}
+  .field input:focus,.field textarea:focus{border-color:var(--accent)}
+  .faq{padding:15px 17px;margin-bottom:11px}
+  .faq .q{font-weight:700;font-size:14px;margin-bottom:4px}
+  .faq .a{color:var(--ink-2);font-size:13px;line-height:1.6}
+  .empty{text-align:center;color:var(--ink-3);padding:34px 10px;font-size:13.5px}
+  /* status */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .stat{padding:16px 18px}.stat .l{font-size:12.5px;color:var(--ink-2);font-weight:600}
+  .stat .n{font-size:30px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums}
+  .stat .n.g{color:var(--accent)}
+  .pause-card{padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:16px}
+  .pause-card .info{flex:1}.pause-card .t{font-weight:700}.pause-card .d{font-size:12.5px;color:var(--ink-2)}
+  .toggle{width:60px;height:32px;border-radius:999px;border:none;background:var(--accent);position:relative;transition:.2s;flex:none}
+  .toggle.off{background:var(--warn)}
+  .toggle .k{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s}
+  .toggle.off .k{left:31px}
+  .log{padding:6px 0}
+  .log-item{display:flex;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border-soft);font-size:13px}
+  .log-item .tm{color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+  .log-item .rs{margin-left:auto;flex:none;font-size:12px}
+  .ok{color:var(--accent-strong)}.bad{color:var(--warn-ink)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--accent);color:#fff;padding:12px 20px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.3s;z-index:70}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="card-login">
+    <div class="mark">🌿</div>
+    <h1>ห้องน้องลีฟ</h1>
+    <p>Villa de Leaf · ระบบดูแลน้องลีฟ</p>
+    <input id="pw" type="password" inputmode="text" placeholder="รหัสผ่าน" autocomplete="current-password">
+    <button class="btn" onclick="doLogin()">เข้าสู่ระบบ</button>
+    <div class="err" id="err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="top">
+    <div class="brand"><span class="d">🌿</span> ห้องน้องลีฟ</div>
+    <div class="status"><span class="live"></span> <span id="stTop">ออนไลน์</span></div>
+    <button class="out" title="ออกจากระบบ" onclick="logout()">⎋</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-v="test" onclick="tab('test')">🧪 ทดลอง</button>
+    <button class="tab" data-v="teach" onclick="tab('teach')">📚 สอน</button>
+    <button class="tab" data-v="status" onclick="tab('status')">📊 สถานะ</button>
+  </div>
+
+  <div class="wrap">
+    <!-- TEST -->
+    <div class="view active" id="v-test">
+      <div class="rowbar"><div class="grow"><h2>🧪 ห้องทดลอง</h2><div class="sub" style="margin:0">คุยกับน้องลีฟทดสอบ — ลูกค้าไม่เห็น ปลอดภัย 100%</div></div><button class="mini" onclick="resetTest()">🔄 รีเซ็ต</button></div>
+      <div class="card chat">
+        <div class="thread" id="testThread"></div>
+        <div class="comp">
+          <input id="testBox" placeholder="ลองพิมพ์เหมือนลูกค้า เช่น สนใจจองห้องพัก" onkeydown="if(event.key==='Enter')sendTest()">
+          <button class="send" id="testSend" onclick="sendTest()">➤</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEACH -->
+    <div class="view" id="v-teach">
+      <h2>📚 สอนน้องลีฟ</h2><div class="sub">เพิ่มความรู้ น้องลีฟจำและตอบเองได้ทันที (เก็บใน Google Sheet จริง)</div>
+      <div class="card faq" style="margin-bottom:18px">
+        <div class="field"><label>ลูกค้าถามแบบไหน</label><input id="tq" placeholder="เช่น มีที่จอดรถไหม"></div>
+        <div class="field"><label>ให้น้องลีฟตอบว่า</label><textarea id="ta" placeholder="เช่น มีค่ะ จอดฟรีหน้าห้องพักเลยค่ะ 🚗"></textarea></div>
+        <button class="btn" style="width:auto;padding:10px 22px" id="saveFaq" onclick="saveFaq()">บันทึก น้องลีฟจำเลย</button>
+      </div>
+      <h2 style="font-size:15px">ความรู้ที่สอนไว้ (<span id="faqCount">…</span>)</h2>
+      <div id="faqList"><div class="empty">กำลังโหลด…</div></div>
+    </div>
+
+    <!-- STATUS -->
+    <div class="view" id="v-status">
+      <h2>📊 สถานะน้องลีฟ</h2><div class="sub">ข้อมูลสด จากบอทจริง</div>
+      <div class="card pause-card">
+        <div class="info"><div class="t" id="pauseTitle">น้องลีฟเปิดอยู่</div><div class="d" id="pauseDesc">กำลังตอบลูกค้าอัตโนมัติ</div></div>
+        <button class="toggle" id="pauseTgl" onclick="togglePause()"><span class="k"></span></button>
+      </div>
+      <div class="stat-grid">
+        <div class="card stat"><div class="l">💬 ถามล่าสุด</div><div class="n" id="stAsk">–</div></div>
+        <div class="card stat"><div class="l">📚 ความรู้ที่สอน</div><div class="n g" id="stFaq">–</div></div>
+        <div class="card stat"><div class="l">🟢 บอท</div><div class="n g" id="stUp" style="font-size:20px">–</div></div>
+      </div>
+      <h2 style="font-size:15px">คำถามล่าสุดที่เข้ามา</h2>
+      <div class="card" style="padding:10px 16px"><div class="log" id="recent"><div class="empty">กำลังโหลด…</div></div></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  var KEY='';
+  var esc=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  function api(path,opts){ opts=opts||{}; opts.headers=Object.assign({'x-leaf-key':KEY,'Content-Type':'application/json'},opts.headers||{}); return fetch('/leaf/api/'+path,opts).then(function(r){ if(r.status===401){throw new Error('unauth');} return r.json(); }); }
+
+  function doLogin(){ var v=document.getElementById('pw').value.trim(); if(!v){return;} KEY=v;
+    api('ping').then(function(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='flex'; sessionStorage.setItem('leafkey',KEY); boot(); })
+      .catch(function(){ document.getElementById('err').textContent='รหัสผ่านไม่ถูกต้อง'; KEY=''; }); }
+  document.getElementById('pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+  function logout(){ sessionStorage.removeItem('leafkey'); location.reload(); }
+
+  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
+
+  function boot(){ resetTest(); loadFaq(); loadStatus(); }
+
+  /* TEST */
+  var testMsgs=[];
+  function resetTest(){ testMsgs=[{f:'s',t:'🧪 เริ่มทดสอบใหม่ — พิมพ์ข้อความเหมือนลูกค้าได้เลย'}]; renderTest(); }
+  function renderTest(){ var th=document.getElementById('testThread'); th.innerHTML=''; testMsgs.forEach(function(m){ var d=document.createElement('div');
+      if(m.f==='s'){d.className='row s';d.textContent=m.t;} else{ d.className='row '+(m.f==='b'?'b':'c'); d.innerHTML=(m.f==='b'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.t); } th.appendChild(d); }); th.scrollTop=th.scrollHeight; }
+  function sendTest(){ var box=document.getElementById('testBox'); var v=box.value.trim(); if(!v)return; box.value=''; testMsgs.push({f:'c',t:v}); testMsgs.push({f:'s',t:'น้องลีฟกำลังพิมพ์…'}); renderTest();
+    document.getElementById('testSend').disabled=true;
+    api('test',{method:'POST',body:JSON.stringify({message:v})}).then(function(r){ testMsgs.pop(); testMsgs.push({f:'b',t:r.reply||'(ไม่มีคำตอบ)'}); renderTest(); })
+      .catch(function(){ testMsgs.pop(); testMsgs.push({f:'s',t:'⚠️ ทดสอบไม่สำเร็จ ลองใหม่'}); renderTest(); })
+      .finally(function(){ document.getElementById('testSend').disabled=false; }); }
+
+  /* TEACH */
+  function loadFaq(){ api('faq').then(function(r){ var list=r.items||[]; document.getElementById('faqCount').textContent=list.length; var el=document.getElementById('faqList');
+      if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีความรู้ที่สอนไว้ — เพิ่มด้านบนได้เลย</div>'; return; }
+      el.innerHTML=''; list.slice().reverse().forEach(function(f){ var d=document.createElement('div'); d.className='card faq'; d.innerHTML='<div class="q">❓ '+esc(f.q)+'</div><div class="a">🌿 '+esc(f.a)+'</div>'; el.appendChild(d); }); })
+    .catch(function(){ document.getElementById('faqList').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; }); }
+  function saveFaq(){ var q=document.getElementById('tq').value.trim(),a=document.getElementById('ta').value.trim(); if(!q||!a){toast('ใส่ทั้งคำถามและคำตอบนะคะ');return;}
+    var b=document.getElementById('saveFaq'); b.disabled=true; b.textContent='กำลังบันทึก…';
+    api('faq',{method:'POST',body:JSON.stringify({q:q,a:a})}).then(function(r){ if(r.ok){ document.getElementById('tq').value='';document.getElementById('ta').value=''; toast('📚 น้องลีฟจำแล้ว!'); loadFaq(); } else { toast('บันทึกไม่สำเร็จ: '+(r.error||'')); } })
+      .catch(function(){ toast('บันทึกไม่สำเร็จ ลองใหม่'); }).finally(function(){ b.disabled=false; b.textContent='บันทึก น้องลีฟจำเลย'; }); }
+
+  /* STATUS */
+  var paused=false;
+  function loadStatus(){ api('status').then(function(r){ document.getElementById('stAsk').textContent=(r.recentAsk||[]).length; document.getElementById('stFaq').textContent=r.faqCount!=null?r.faqCount:'–'; document.getElementById('stUp').textContent=r.online?'ออนไลน์':'—';
+      paused=!!r.paused; renderPause();
+      var el=document.getElementById('recent'); var list=(r.recentAsk||[]).slice().reverse();
+      if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีคำถามเข้ามา</div>'; return; }
+      el.innerHTML=''; list.forEach(function(a){ var d=document.createElement('div'); d.className='log-item'; var ok=(a.result||'').indexOf('✅')>=0;
+        d.innerHTML='<span class="tm">'+esc(a.at||'')+'</span><span>'+esc(a.msg||'')+'</span><span class="rs '+(ok?'ok':'bad')+'">'+esc(a.result||'')+'</span>'; el.appendChild(d); }); })
+    .catch(function(){ document.getElementById('recent').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; }); }
+  function renderPause(){ var t=document.getElementById('pauseTgl'); t.classList.toggle('off',paused); document.getElementById('pauseTitle').textContent=paused?'น้องลีฟพักอยู่':'น้องลีฟเปิดอยู่'; document.getElementById('pauseDesc').textContent=paused?'หยุดตอบลูกค้าชั่วคราว — ทีมตอบเอง':'กำลังตอบลูกค้าอัตโนมัติ'; document.getElementById('stTop').textContent=paused?'พักอยู่':'ออนไลน์'; }
+  function togglePause(){ var next=!paused; api('pause',{method:'POST',body:JSON.stringify({on:next})}).then(function(r){ paused=!!r.paused; renderPause(); toast(paused?'⏸️ พักน้องลีฟแล้ว':'▶️ เปิดน้องลีฟแล้ว'); }).catch(function(){ toast('เปลี่ยนไม่สำเร็จ'); }); }
+
+  var tt; function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(function(){t.classList.remove('show');},2200); }
+
+  // auto-login if key saved this session
+  (function(){ var k=sessionStorage.getItem('leafkey'); if(k){ KEY=k; api('ping').then(function(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='flex'; boot(); }).catch(function(){ KEY=''; sessionStorage.removeItem('leafkey'); }); } })();
+</script>
+</body>
+</html>
