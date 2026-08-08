@@ -1160,12 +1160,11 @@ app.listen(port, () => console.log(`Bot listening on port ${port}`));
 // ---- Keep-alive: ping ตัวเองทุก ~10 นาที กัน Render free "หลับ" ตอนไม่มีคนใช้ ----
 //  (Render free spin-down เมื่อไม่มี inbound request ~15 นาที → ข้อความแรกหลังหลับช้า/หาย)
 //  คนใช้เยอะจริงค่อยอัปเกรด Render เป็น paid (ไม่หลับเลย) แล้วเอาบล็อกนี้ออกก็ได้
-if (PUBLIC_URL) {
-  const KEEPALIVE_MS = 10 * 60 * 1000; // 10 นาที (ก่อน 15 นาทีที่จะหลับ)
-  setInterval(() => {
-    fetch(PUBLIC_URL, { method: "GET" }).catch(() => {});
-  }, KEEPALIVE_MS);
-  console.log(`keep-alive: ping ${PUBLIC_URL} ทุก ${KEEPALIVE_MS / 60000} นาที`);
-} else {
-  console.log("keep-alive: ปิด (ไม่ได้ตั้ง PUBLIC_URL)");
-}
+// ใช้ PUBLIC_URL ถ้าตั้งไว้ ไม่งั้น fallback เป็น URL จริงบน Render
+// → กันหลับได้ "เสมอ" ไม่ต้องพึ่ง env var / ไม่ต้องพึ่งใครมาตั้งค่า
+const SELF_URL = PUBLIC_URL || "https://line-bot-p2ne.onrender.com";
+const KEEPALIVE_MS = 10 * 60 * 1000; // 10 นาที (ก่อน 15 นาทีที่จะหลับ)
+setInterval(() => {
+  fetch(SELF_URL, { method: "GET" }).catch(() => {});
+}, KEEPALIVE_MS);
+console.log(`keep-alive: ping ${SELF_URL} ทุก ${KEEPALIVE_MS / 60000} นาที (เปิดตลอด)`);
