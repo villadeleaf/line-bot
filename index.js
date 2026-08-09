@@ -973,7 +973,7 @@ app.get("/leaf/api/chat", dashAuth, (req, res) => {
   const messages = h
     .filter((m) => typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0)
     .map((m) => ({ from: m.role === "assistant" ? "bot" : "cust", text: m.content }));
-  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, paused: leafPausedUsers.has(uid), summary: extractSummary(h), messages });
+  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, paused: leafPausedUsers.has(uid), topic: classifyTopic(h), summary: extractSummary(h), messages });
 });
 // พัก/เปิดน้องลีฟรายคน (แอดมินคุยเอง)
 app.post("/leaf/api/pauseuser", dashAuth, express.json({ limit: "8kb" }), (req, res) => {

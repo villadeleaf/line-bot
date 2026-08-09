@@ -101,7 +101,15 @@
   .notif-side h3{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:7px}
   .ns-item{display:flex;gap:9px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer}
   .ns-item:hover{background:var(--surface-2)}
-  @media (min-width:1200px){ .notif-side{display:block} .wrap{margin-right:340px} }
+  /* แผงข้อมูลลูกค้าด้านซ้าย (ใช้พื้นที่ว่าง บนคอม) */
+  .cust-side{display:none;position:fixed;top:100px;left:18px;width:280px;max-height:calc(100vh - 130px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow);padding:16px;z-index:5}
+  .cust-side .cs-av{width:60px;height:60px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 8px}
+  .cust-side .cs-name{font-weight:700;font-size:15px;text-align:center;margin-bottom:3px}
+  .cust-side .cs-topic{text-align:center;color:var(--accent-strong);font-weight:600;font-size:12.5px;margin-bottom:14px}
+  .cust-side .cs-row{background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:8px;line-height:1.6}
+  .cust-side .cs-btn{display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;margin-top:6px;text-decoration:none;cursor:pointer;font-family:inherit}
+  @media (min-width:1280px){ .notif-side{display:block} .cust-side{display:block} .wrap{margin-left:300px;margin-right:330px} }
+  @media (min-width:1080px) and (max-width:1279px){ .notif-side{display:block} .wrap{margin-right:330px} }
 </style>
 </head>
 <body>
@@ -198,6 +206,7 @@
       <div class="card" style="padding:10px 16px"><div class="log" id="recent"><div class="empty">กำลังโหลด…</div></div></div>
     </div>
   </div>
+  <div class="cust-side" id="custSide"><div class="empty" style="padding:24px 6px">เลือกแชทเพื่อดูข้อมูลลูกค้า 🌿</div></div>
   <div class="notif-side" id="notifSide">
     <h3>🔔 แจ้งเตือนสด</h3>
     <div id="notifList"><div class="empty" style="padding:18px 6px">—</div></div>
@@ -248,7 +257,7 @@
         d.innerHTML=av+'<div style="flex:1;min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--accent-strong);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.topic||'')+'</div><div style="color:var(--ink-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div><span style="color:var(--ink-3);font-size:12px;flex:none">'+esc(c.at||'')+'</span>'+badge;
         el.appendChild(d); }); }).catch(function(){}); }
   function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
-  function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; loadChats(); }
+  function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; var cs=document.getElementById('custSide'); if(cs)cs.innerHTML='<div class="empty" style="padding:24px 6px">เลือกแชทเพื่อดูข้อมูลลูกค้า 🌿</div>'; loadChats(); }
   function sendReply(){ var box=document.getElementById('custBox'); var v=box.value.trim(); if(!v||!curChatId)return;
     if(!confirm('ส่งข้อความนี้ถึงลูกค้าจริงนะคะ?\n\n“'+v+'”')) return;
     box.disabled=true; document.getElementById('custSend').disabled=true;
@@ -262,6 +271,13 @@
       document.getElementById('chatPhone').innerHTML = phone?'  <a href="tel:'+phone+'" onclick="copyPhone(\''+phone+'\')" style="color:var(--accent-strong);font-size:12.5px;text-decoration:none;font-weight:600">📞 โทร '+phone+'</a>':'';
       var s=r.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
       if(p.length){ var sm=document.createElement('div'); sm.style.cssText='align-self:center;background:var(--accent-soft);color:var(--accent-strong);border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;margin-bottom:4px'; sm.textContent='📋 สรุป: '+p.join('  ·  '); th.appendChild(sm); }
+      var cs=document.getElementById('custSide');
+      if(cs){ var csav=r.pictureUrl?'<img class="cs-av" src="'+esc(r.pictureUrl)+'">':'<div class="cs-av" style="background:var(--surface-3);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px">'+esc((r.name||'ล').slice(0,1).toUpperCase())+'</div>';
+        var csrows=''; if(phone)csrows+='<div class="cs-row">📞 <b>'+esc(phone)+'</b></div>';
+        if(p.length)csrows+='<div class="cs-row">📋 <b>สรุปจอง</b><br>'+esc(p.join(' · '))+'</div>';
+        cs.innerHTML=csav+'<div class="cs-name">'+esc(r.name||'ลูกค้า')+'</div><div class="cs-topic">'+esc(r.topic||'')+'</div>'+csrows+'<button class="cs-btn" onclick="copySummary()">📋 ก๊อปสรุป (ชื่อ/เบอร์/ห้อง/วัน)</button>'+(phone?'<a class="cs-btn" style="background:var(--surface-2);color:var(--accent-strong)" href="tel:'+phone+'" onclick="copyPhone(\''+phone+'\')">📞 โทร '+phone+'</a>':'');
+        window._curCS={name:r.name||'ลูกค้า',phone:phone,topic:r.topic||'',s:s};
+      }
       (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
   var curChatPaused=false;
   function setPauseBtn(paused){ curChatPaused=paused; var b=document.getElementById('pauseBtn'); if(!b)return; b.textContent=paused?'▶️ เปิดบอท':'⏸️ พักบอท'; b.style.color=paused?'var(--warn-ink)':''; }
@@ -269,6 +285,7 @@
   var QR={ bank:'โอนมัดจำได้ที่ 🏦 ธ.กสิกรไทย เลขบัญชี 230-1-67564-2 ชื่อบัญชี บจก.วิลลาเดอลีฟ ค่ะ โอนแล้วส่งสลิปกลับมาได้เลยนะคะ 🌿', map:'พิกัดที่พักค่ะ 📍 https://maps.app.goo.gl/SC5nvt8kGNBbNdP27', thanks:'ขอบคุณมากค่ะ 🌿 แล้วเจอกันที่ Villa de Leaf นะคะ 😊', offhours:'ตอนนี้อยู่นอกเวลาทำการพอดีค่ะ 🙏 เดี๋ยวแอดมินติดต่อกลับมายืนยันให้ในเวลาทำการนะคะ (จ-ศ 10:00–22:30 · ส-อา 11:00–23:00) ขอบคุณค่ะ' };
   function qr(k){ var box=document.getElementById('custBox'); box.value=QR[k]||''; box.focus(); }
   function copyPhone(p){ try{ navigator.clipboard.writeText(p); toast('📋 ก๊อปเบอร์ '+p+' แล้ว'); }catch(e){} }
+  function copySummary(){ var c=window._curCS||{}; var s=c.s||{}; var t='📋 สรุปลูกค้า\nชื่อ: '+(c.name||'-')+'\nเบอร์: '+(c.phone||'-')+'\nจำนวน: '+(s.guests||'-')+'\nวันที่: '+(s.date||'-')+'\nห้อง: '+(s.rooms||'-')+'\nสัตว์เลี้ยง: '+(s.pet||'-')+'\nเรื่อง: '+(c.topic||'-'); try{navigator.clipboard.writeText(t);toast('📋 ก๊อปสรุปแล้ว วางในระบบจองได้เลย');}catch(e){} }
 
   /* LEADS */
   function loadLeads(){ api('leads').then(function(r){ var list=r.leads||[]; var el=document.getElementById('leadList');
