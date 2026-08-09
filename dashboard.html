@@ -133,6 +133,7 @@
     <button class="out" title="ออกจากระบบ" onclick="logout()">⎋</button>
     <div id="bellPanel" style="display:none;position:fixed;top:56px;right:12px;width:min(330px,calc(100vw - 24px));max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow);padding:13px;z-index:60">
       <h3 style="margin:0 0 9px;font-size:14px">🔔 แจ้งเตือน</h3>
+      <button id="enableBadgeBtn" class="mini" style="width:100%;margin-bottom:9px;display:none" onclick="enableBadge(event)">🔴 เปิดเลขแดงบนไอคอนแอป</button>
       <div id="bellList"><div class="empty" style="padding:16px 6px">ยังไม่มีแจ้งเตือน 🌿</div></div>
     </div>
   </div>
@@ -247,7 +248,10 @@
   function loadNotifs(){ api('alerts').then(function(r){ var list=r.alerts||[]; renderNotifs(list); renderBell(list);
       var bb=document.getElementById('bellBadge'); if(bb){ var fresh=Math.max(0,list.length-_seenAlerts); bb.textContent=fresh; bb.style.display=fresh>0?'flex':'none'; } }).catch(function(){}); }
   function toggleBell(e){ e.stopPropagation(); var p=document.getElementById('bellPanel'); var open=p.style.display==='block'; p.style.display=open?'none':'block';
-      if(!open){ api('alerts').then(function(r){ _seenAlerts=(r.alerts||[]).length; var bb=document.getElementById('bellBadge'); if(bb)bb.style.display='none'; }); } }
+      if(!open){ var eb=document.getElementById('enableBadgeBtn'); if(eb && 'Notification' in window && Notification.permission!=='granted') eb.style.display='block';
+        api('alerts').then(function(r){ _seenAlerts=(r.alerts||[]).length; var bb=document.getElementById('bellBadge'); if(bb)bb.style.display='none'; }); } }
+  function enableBadge(e){ e.stopPropagation(); if(!('Notification' in window)){ toast('เครื่องนี้ไม่รองรับ'); return; }
+      Notification.requestPermission().then(function(p){ if(p==='granted'){ document.getElementById('enableBadgeBtn').style.display='none'; toast('🔴 เปิดเลขแดงบนไอคอนแล้ว!'); loadChats(); } else { toast('ยังไม่ได้อนุญาต — ลองใหม่ได้'); } }); }
   document.addEventListener('click',function(){ var p=document.getElementById('bellPanel'); if(p)p.style.display='none'; });
   function renderBell(list){ var el=document.getElementById('bellList'); if(!el)return;
     if(!list.length){ el.innerHTML='<div class="empty" style="padding:16px 6px">ยังไม่มีแจ้งเตือน 🌿<br><span style="font-size:11px">(จอง / ตอบไม่ได้ / ห้องว่าง จะเด้งที่นี่)</span></div>'; return; }
