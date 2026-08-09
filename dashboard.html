@@ -138,9 +138,15 @@
         <div id="chatList"><div class="empty">กำลังโหลด…</div></div>
       </div>
       <div id="chatThreadWrap" style="display:none">
-        <div class="rowbar"><button class="mini" onclick="backChats()">‹ กลับ</button><div class="grow"><h2 id="chatName" style="font-size:17px;margin:0"></h2></div></div>
+        <div class="rowbar"><button class="mini" onclick="backChats()">‹ กลับ</button><div class="grow"><h2 id="chatName" style="font-size:17px;margin:0"></h2><span id="chatPhone"></span></div><button class="mini" id="pauseBtn" onclick="togglePauseUser()">⏸️ พักบอท</button></div>
         <div class="card chat">
           <div class="thread" id="custThread"></div>
+          <div id="quickRow" style="display:flex;gap:6px;flex-wrap:wrap;padding:9px 11px 0">
+            <button class="mini" onclick="qr('bank')">🏦 บัญชี</button>
+            <button class="mini" onclick="qr('map')">📍 พิกัด</button>
+            <button class="mini" onclick="qr('thanks')">🙏 ขอบคุณ</button>
+            <button class="mini" onclick="qr('offhours')">⏰ นอกเวลา</button>
+          </div>
           <div class="comp"><input id="custBox" placeholder="พิมพ์ตอบลูกค้า... (กดส่งแล้วยืนยันก่อนถึงลูกค้า)" onkeydown="if(event.key==='Enter')sendReply()"><button class="send" id="custSend" onclick="sendReply()">➤</button></div>
         </div>
       </div>
@@ -251,9 +257,17 @@
       else{ toast('❌ ส่งไม่ได้: '+(r.error||'')); }
     }).catch(function(){ toast('❌ ส่งไม่สำเร็จ'); }).finally(function(){ box.disabled=false; document.getElementById('custSend').disabled=false; box.focus(); }); }
   function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML='';
+      setPauseBtn(!!r.paused);
+      var phone=''; (r.messages||[]).forEach(function(m){ var mm=(m.text||'').replace(/[\s-]/g,'').match(/0\d{8,9}/); if(mm)phone=mm[0]; });
+      document.getElementById('chatPhone').innerHTML = phone?'  <a href="tel:'+phone+'" style="color:var(--accent-strong);font-size:12.5px;text-decoration:none;font-weight:600">📞 โทร '+phone+'</a>':'';
       var s=r.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
       if(p.length){ var sm=document.createElement('div'); sm.style.cssText='align-self:center;background:var(--accent-soft);color:var(--accent-strong);border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;margin-bottom:4px'; sm.textContent='📋 สรุป: '+p.join('  ·  '); th.appendChild(sm); }
       (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
+  var curChatPaused=false;
+  function setPauseBtn(paused){ curChatPaused=paused; var b=document.getElementById('pauseBtn'); if(!b)return; b.textContent=paused?'▶️ เปิดบอท':'⏸️ พักบอท'; b.style.color=paused?'var(--warn-ink)':''; }
+  function togglePauseUser(){ if(!curChatId)return; var next=!curChatPaused; api('pauseuser',{method:'POST',body:JSON.stringify({userId:curChatId,on:next})}).then(function(r){ setPauseBtn(!!r.paused); toast(r.paused?'⏸️ พักบอทแชทนี้ — พี่ตอบเอง':'▶️ เปิดบอทแชทนี้แล้ว'); }).catch(function(){ toast('เปลี่ยนไม่สำเร็จ'); }); }
+  var QR={ bank:'โอนมัดจำได้ที่ 🏦 ธ.กสิกรไทย เลขบัญชี 230-1-67564-2 ชื่อบัญชี บจก.วิลลาเดอลีฟ ค่ะ โอนแล้วส่งสลิปกลับมาได้เลยนะคะ 🌿', map:'พิกัดที่พักค่ะ 📍 https://maps.app.goo.gl/SC5nvt8kGNBbNdP27', thanks:'ขอบคุณมากค่ะ 🌿 แล้วเจอกันที่ Villa de Leaf นะคะ 😊', offhours:'ตอนนี้อยู่นอกเวลาทำการพอดีค่ะ 🙏 เดี๋ยวแอดมินติดต่อกลับมายืนยันให้ในเวลาทำการนะคะ (จ-ศ 10:00–22:30 · ส-อา 11:00–23:00) ขอบคุณค่ะ' };
+  function qr(k){ var box=document.getElementById('custBox'); box.value=QR[k]||''; box.focus(); }
 
   /* LEADS */
   function loadLeads(){ api('leads').then(function(r){ var list=r.leads||[]; var el=document.getElementById('leadList');

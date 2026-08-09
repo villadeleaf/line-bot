@@ -234,6 +234,8 @@ const recentAsk = [];
 // พักน้องลีฟทั้งระบบ (แอดมินกดจากหน้า /leaf) — รีเซ็ตเป็น "เปิด" เมื่อ deploy ใหม่
 let botPaused = false;
 const bootAt = Date.now();
+// พักน้องลีฟ "รายคน" จากหน้า /leaf (แอดมินกดคุยเอง) — userId ที่พักอยู่ (คนละตัวกับ handover เดิม)
+const leafPausedUsers = new Set();
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -958,7 +960,14 @@ app.get("/leaf/api/chat", dashAuth, (req, res) => {
   const messages = h
     .filter((m) => typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0)
     .map((m) => ({ from: m.role === "assistant" ? "bot" : "cust", text: m.content }));
-  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, summary: extractSummary(h), messages });
+  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, paused: leafPausedUsers.has(uid), summary: extractSummary(h), messages });
+});
+// พัก/เปิดน้องลีฟรายคน (แอดมินคุยเอง)
+app.post("/leaf/api/pauseuser", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
+  const uid = String((req.body && req.body.userId) || "");
+  if (!uid) return res.status(400).json({ error: "no userId" });
+  if (req.body && req.body.on) leafPausedUsers.add(uid); else leafPausedUsers.delete(uid);
+  res.json({ paused: leafPausedUsers.has(uid) });
 });
 // กระดาน lead: ลูกค้าที่มีแววจอง (สนใจแต่ยังไม่ปิด) พร้อมสรุปข้อมูล
 app.get("/leaf/api/leads", dashAuth, (_req, res) => {
@@ -1030,6 +1039,13 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     askRec.result = "⏸️ พักบอท (แอดมินปิดจาก /leaf)";
     askRec.ms = Date.now() - _t0;
     return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "น้องลีฟถูกพักชั่วคราวโดยแอดมิน", paused: true });
+  }
+  // พักรายคน: แอดมินกำลังคุยแชทนี้เอง → น้องลีฟไม่ตอบ (ระบบเฮีย reply ว่าง = ไม่ส่ง)
+  if (leafPausedUsers.has(userId) && !fromAdmin && !req.body.test) {
+    askRec.result = "⏸️ พักรายคน (แอดมินตอบเอง)";
+    askRec.ms = Date.now() - _t0;
+    chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 40), pictureUrl: String((req.body || {}).pictureUrl || (req.body || {}).picture || "").slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: true });
+    return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "แอดมินกำลังดูแลแชทนี้เอง", paused: true });
   }
 
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
