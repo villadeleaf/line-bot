@@ -231,6 +231,8 @@ const alertClient = ALERT_PUSH_TOKEN
 let lastGroupSeen = null;
 // ตัวดักจับ /ask 20 รายการล่าสุด (ไว้เช็คผ่าน /selftest ว่า FB/LINE ยิงเข้า /ask จริงไหม)
 const recentAsk = [];
+// แจ้งเตือนสำคัญ (แบบที่เคยส่งเข้ากลุ่ม LINE: จอง/ตอบไม่ได้/ห้องว่าง/ส่วนลด) — โชว์ในแอป /leaf (ฟรี ไม่ใช้ push)
+const recentAlerts = [];
 // พักน้องลีฟทั้งระบบ (แอดมินกดจากหน้า /leaf) — รีเซ็ตเป็น "เปิด" เมื่อ deploy ใหม่
 let botPaused = false;
 const bootAt = Date.now();
@@ -985,6 +987,8 @@ app.post("/leaf/api/setstatus", dashAuth, express.json({ limit: "8kb" }), (req, 
   if (st) chatStatus.set(uid, st); else chatStatus.delete(uid);
   res.json({ status: chatStatus.get(uid) || "" });
 });
+// แจ้งเตือนสำคัญในแอป (จอง/ตอบไม่ได้/ห้องว่าง/ส่วนลด) — แทนกลุ่ม LINE
+app.get("/leaf/api/alerts", dashAuth, (_req, res) => res.json({ alerts: recentAlerts.slice(-20).reverse() }));
 // พัก/เปิดน้องลีฟรายคน (แอดมินคุยเอง)
 app.post("/leaf/api/pauseuser", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   const uid = String((req.body && req.body.userId) || "");
@@ -1214,6 +1218,9 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
         };
         const custName = String(req.body.name || "ลูกค้า").trim();
         const title = titles[alertType] || titles.help;
+        // เก็บลงแอป /leaf ด้วย (ฟรี ไม่ใช้ push — เด้งในแผงแจ้งเตือนแม้กลุ่ม LINE โควตาเต็ม)
+        recentAlerts.push({ at: askRec.at, userId, name: custName, type: alertType, title, detail: alertDetail, pictureUrl: String((req.body || {}).pictureUrl || "").slice(0, 400) });
+        if (recentAlerts.length > 30) recentAlerts.shift();
         // (1) เด้งเข้า "กลุ่มไลน์ทีม" (ผ่าน token OA จริงที่อยู่ในกลุ่ม) — ตัวหลัก
         //   booking = สรุปการจองพร้อมก๊อป + เลขบัญชี (แอดมินก๊อปส่งลูกค้าเอง · น้องลีฟไม่ส่งให้ลูกค้า)
         const bankBlock = "🏦 ธนาคารกสิกรไทย\nเลขบัญชี 230-1-67564-2\nชื่อบัญชี บจก. วิลลาเดอลีฟ";
