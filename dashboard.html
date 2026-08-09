@@ -144,6 +144,7 @@
     <div class="view active" id="v-chat">
       <div id="chatListWrap">
         <div class="rowbar"><div class="grow"><h2>💬 ห้องแชท</h2><div class="sub" style="margin:0">บทสนทนากับลูกค้าจริง — อัปเดตสดอัตโนมัติ</div></div><span class="mini" style="color:var(--accent-strong)">🟢 สด</span></div>
+        <input id="chatSearch" placeholder="🔍 ค้นหาลูกค้า / ข้อความ..." oninput="renderChatList()" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--ink);font-size:13px;outline:none;margin-bottom:10px">
         <div id="chatList"><div class="empty">กำลังโหลด…</div></div>
       </div>
       <div id="chatThreadWrap" style="display:none">
@@ -248,15 +249,23 @@
       el.appendChild(d);
     });
   }
-  function loadChats(){ api('chats').then(function(r){ var list=r.chats||[]; updateBadge(list.filter(function(x){return x.needsHuman;}).length); var el=document.getElementById('chatList');
-      if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีแชทลูกค้า — จะขึ้นเองเมื่อมีลูกค้าทักเข้ามา 🌿</div>'; return; }
-      el.innerHTML=''; list.forEach(function(c){ var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer';
+  var _chats=[], _lastKey='';
+  function loadChats(){ api('chats').then(function(r){ _chats=r.chats||[]; updateBadge(_chats.filter(function(x){return x.needsHuman;}).length);
+      var key=_chats.map(function(c){return c.userId+'|'+c.at;}).join(','); if(_lastKey && key!==_lastKey) beep(); _lastKey=key;
+      renderChatList(); }).catch(function(){}); }
+  function beep(){ try{ var A=window.AudioContext||window.webkitAudioContext; if(!A)return; var ctx=window._actx||(window._actx=new A()); if(ctx.state==='suspended')ctx.resume(); var o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=0.07; o.connect(g); g.connect(ctx.destination); o.start(); setTimeout(function(){o.stop();},170);}catch(e){} }
+  function renderChatList(){ var el=document.getElementById('chatList'); if(!el)return; var sb=document.getElementById('chatSearch'); var q=sb?sb.value.toLowerCase():'';
+      var list=_chats.filter(function(c){ return !q || (c.name||'').toLowerCase().indexOf(q)>=0 || (c.lastMsg||'').toLowerCase().indexOf(q)>=0 || (c.topic||'').toLowerCase().indexOf(q)>=0; });
+      if(!list.length){ el.innerHTML='<div class="empty">'+(_chats.length?'ไม่พบแชทที่ค้นหา':'ยังไม่มีแชทลูกค้า — จะขึ้นเองเมื่อมีลูกค้าทัก 🌿')+'</div>'; return; }
+      el.innerHTML='';
+      list.forEach(function(c){ var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer';
         d.onclick=function(){openChat(c.userId,c.name);};
         var badge=c.needsHuman?'<span class="mini" style="color:var(--warn-ink);padding:3px 9px;flex:none">🙋 ต้องตอบ</span>':'<span class="mini" style="color:var(--accent-strong);padding:3px 9px;flex:none">🌿 บอทดูแล</span>';
+        var stb=c.status?'<span class="mini" style="background:var(--accent-soft);color:var(--accent-strong);padding:2px 8px">'+esc(c.status)+'</span>':'';
         var nm=c.name||'ลูกค้า';
         var av=c.pictureUrl?'<img src="'+esc(c.pictureUrl)+'" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none">':'<div style="width:42px;height:42px;border-radius:50%;background:var(--surface-3);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none">'+esc(nm.slice(0,1).toUpperCase())+'</div>';
-        d.innerHTML=av+'<div style="flex:1;min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--accent-strong);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.topic||'')+'</div><div style="color:var(--ink-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div><span style="color:var(--ink-3);font-size:12px;flex:none">'+esc(c.at||'')+'</span>'+badge;
-        el.appendChild(d); }); }).catch(function(){}); }
+        d.innerHTML=av+'<div style="flex:1;min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+' '+stb+'</div><div style="color:var(--accent-strong);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.topic||'')+'</div><div style="color:var(--ink-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div><span style="color:var(--ink-3);font-size:12px;flex:none">'+esc(c.at||'')+'</span>'+badge;
+        el.appendChild(d); }); }
   function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
   function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; var cs=document.getElementById('custSide'); if(cs)cs.innerHTML='<div class="empty" style="padding:24px 6px">เลือกแชทเพื่อดูข้อมูลลูกค้า 🌿</div>'; loadChats(); }
   function sendReply(){ var box=document.getElementById('custBox'); var v=box.value.trim(); if(!v||!curChatId)return;
@@ -276,7 +285,9 @@
       if(cs){ var csav=r.pictureUrl?'<img class="cs-av" src="'+esc(r.pictureUrl)+'">':'<div class="cs-av" style="background:var(--surface-3);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px">'+esc((r.name||'ล').slice(0,1).toUpperCase())+'</div>';
         var csrows=''; if(phone)csrows+='<div class="cs-row">📞 <b>'+esc(phone)+'</b></div>';
         if(p.length)csrows+='<div class="cs-row">📋 <b>สรุปจอง</b><br>'+esc(p.join(' · '))+'</div>';
-        cs.innerHTML=csav+'<div class="cs-name">'+esc(r.name||'ลูกค้า')+'</div><div class="cs-topic">'+esc(r.topic||'')+'</div>'+csrows+'<button class="cs-btn" onclick="copySummary()">📋 ก๊อปสรุป (ชื่อ/เบอร์/ห้อง/วัน)</button>'+(phone?'<a class="cs-btn" style="background:var(--surface-2);color:var(--accent-strong)" href="tel:'+phone+'" onclick="copyPhone(\''+phone+'\')">📞 โทร '+phone+'</a>':'');
+        var stchip=r.status?'<div style="text-align:center;margin-bottom:12px"><span class="mini" style="background:var(--accent-soft);color:var(--accent-strong);padding:4px 12px">'+esc(r.status)+'</span></div>':'';
+        var stbtns='<div style="margin:6px 0 5px;font-size:11px;color:var(--ink-3);font-weight:700">🏷️ ติดป้ายสถานะ</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"><button class="mini" style="flex:1" onclick="setStatus(\'✅ จองแล้ว\')">✅ จองแล้ว</button><button class="mini" style="flex:1" onclick="setStatus(\'💰 รอโอน\')">💰 รอโอน</button><button class="mini" style="flex:1" onclick="setStatus(\'❌ ยกเลิก\')">❌ ยกเลิก</button><button class="mini" style="flex:1" onclick="setStatus(\'\')">ล้าง</button></div>';
+        cs.innerHTML=csav+'<div class="cs-name">'+esc(r.name||'ลูกค้า')+'</div><div class="cs-topic">'+esc(r.topic||'')+'</div>'+stchip+csrows+stbtns+'<button class="cs-btn" onclick="copySummary()">📋 ก๊อปสรุป (ชื่อ/เบอร์/ห้อง/วัน)</button>'+(phone?'<a class="cs-btn" style="background:var(--surface-2);color:var(--accent-strong)" href="tel:'+phone+'" onclick="copyPhone(\''+phone+'\')">📞 โทร '+phone+'</a>':'');
         window._curCS={name:r.name||'ลูกค้า',phone:phone,topic:r.topic||'',s:s};
       }
       (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
@@ -286,6 +297,7 @@
   var QR={ bank:'โอนมัดจำได้ที่ 🏦 ธ.กสิกรไทย เลขบัญชี 230-1-67564-2 ชื่อบัญชี บจก.วิลลาเดอลีฟ ค่ะ โอนแล้วส่งสลิปกลับมาได้เลยนะคะ 🌿', map:'พิกัดที่พักค่ะ 📍 https://maps.app.goo.gl/SC5nvt8kGNBbNdP27', thanks:'ขอบคุณมากค่ะ 🌿 แล้วเจอกันที่ Villa de Leaf นะคะ 😊', offhours:'ตอนนี้อยู่นอกเวลาทำการพอดีค่ะ 🙏 เดี๋ยวแอดมินติดต่อกลับมายืนยันให้ในเวลาทำการนะคะ (จ-ศ 10:00–22:30 · ส-อา 11:00–23:00) ขอบคุณค่ะ' };
   function qr(k){ var box=document.getElementById('custBox'); box.value=QR[k]||''; box.focus(); }
   function copyPhone(p){ try{ navigator.clipboard.writeText(p); toast('📋 ก๊อปเบอร์ '+p+' แล้ว'); }catch(e){} }
+  function setStatus(st){ if(!curChatId)return; api('setstatus',{method:'POST',body:JSON.stringify({userId:curChatId,status:st})}).then(function(){ toast(st?('🏷️ ติดป้าย: '+st):'ล้างป้ายแล้ว'); loadThread(); loadChats(); }).catch(function(){ toast('ไม่สำเร็จ'); }); }
   function copySummary(){ var c=window._curCS||{}; var s=c.s||{}; var t='📋 สรุปลูกค้า\nชื่อ: '+(c.name||'-')+'\nเบอร์: '+(c.phone||'-')+'\nจำนวน: '+(s.guests||'-')+'\nวันที่: '+(s.date||'-')+'\nห้อง: '+(s.rooms||'-')+'\nสัตว์เลี้ยง: '+(s.pet||'-')+'\nเรื่อง: '+(c.topic||'-'); try{navigator.clipboard.writeText(t);toast('📋 ก๊อปสรุปแล้ว วางในระบบจองได้เลย');}catch(e){} }
 
   /* LEADS */

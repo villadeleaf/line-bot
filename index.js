@@ -289,6 +289,8 @@ const BATCH = 4; // ส่งรูปทีละ 4 (ข้อความ + 4 
 const conversations = new Map();
 // ข้อมูลย่อรายแชท (ไว้โชว์รายชื่อในห้องแชท /leaf) — userId → {name, at, lastMsg, needsHuman}
 const chatMeta = new Map();
+// ป้ายสถานะแชทที่แอดมินติดเอง (จองแล้ว/รอโอน/ปิด) — userId → status string
+const chatStatus = new Map();
 
 // สกัด "สรุปการจอง" จากบทสนทนาลูกค้าแบบเบา ๆ (จำนวนคน/วัน/สัตว์เลี้ยง/ห้องที่พูดถึง) — ไม่ใช้ AI
 function extractSummary(history) {
@@ -962,7 +964,7 @@ app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res)
 // ห้องแชท: รายชื่อบทสนทนาลูกค้า (สดจาก chatMeta) + อ่านบทสนทนารายคน (จาก conversations)
 app.get("/leaf/api/chats", dashAuth, (_req, res) => {
   const list = [];
-  chatMeta.forEach((v, k) => list.push({ userId: k, name: v.name || "", pictureUrl: v.pictureUrl || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman, topic: classifyTopic(conversations.get(k) || []) }));
+  chatMeta.forEach((v, k) => list.push({ userId: k, name: v.name || "", pictureUrl: v.pictureUrl || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman, topic: classifyTopic(conversations.get(k) || []), status: chatStatus.get(k) || "" }));
   list.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   res.json({ chats: list.slice(0, 50) });
 });
@@ -973,7 +975,15 @@ app.get("/leaf/api/chat", dashAuth, (req, res) => {
   const messages = h
     .filter((m) => typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0)
     .map((m) => ({ from: m.role === "assistant" ? "bot" : "cust", text: m.content }));
-  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, paused: leafPausedUsers.has(uid), topic: classifyTopic(h), summary: extractSummary(h), messages });
+  res.json({ name: meta.name || "", pictureUrl: meta.pictureUrl || "", needsHuman: !!meta.needsHuman, paused: leafPausedUsers.has(uid), topic: classifyTopic(h), status: chatStatus.get(uid) || "", summary: extractSummary(h), messages });
+});
+// ติดป้ายสถานะแชท (จองแล้ว/รอโอน/ปิด/ล้าง)
+app.post("/leaf/api/setstatus", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
+  const uid = String((req.body && req.body.userId) || "");
+  const st = String((req.body && req.body.status) || "").slice(0, 20);
+  if (!uid) return res.status(400).json({ error: "no userId" });
+  if (st) chatStatus.set(uid, st); else chatStatus.delete(uid);
+  res.json({ status: chatStatus.get(uid) || "" });
 });
 // พัก/เปิดน้องลีฟรายคน (แอดมินคุยเอง)
 app.post("/leaf/api/pauseuser", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
