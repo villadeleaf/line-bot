@@ -259,7 +259,7 @@
   function loadThread(){ if(!curChatId)return; api('chat?userId='+encodeURIComponent(curChatId)).then(function(r){ var th=document.getElementById('custThread'); th.innerHTML='';
       setPauseBtn(!!r.paused);
       var phone=''; (r.messages||[]).forEach(function(m){ var mm=(m.text||'').replace(/[\s-]/g,'').match(/0\d{8,9}/); if(mm)phone=mm[0]; });
-      document.getElementById('chatPhone').innerHTML = phone?'  <a href="tel:'+phone+'" style="color:var(--accent-strong);font-size:12.5px;text-decoration:none;font-weight:600">📞 โทร '+phone+'</a>':'';
+      document.getElementById('chatPhone').innerHTML = phone?'  <a href="tel:'+phone+'" onclick="copyPhone(\''+phone+'\')" style="color:var(--accent-strong);font-size:12.5px;text-decoration:none;font-weight:600">📞 โทร '+phone+'</a>':'';
       var s=r.summary||{}; var p=[]; if(s.guests)p.push('👥 '+s.guests); if(s.date)p.push('📅 '+s.date); if(s.pet)p.push('🐾 '+s.pet); if(s.rooms)p.push('🏡 '+s.rooms);
       if(p.length){ var sm=document.createElement('div'); sm.style.cssText='align-self:center;background:var(--accent-soft);color:var(--accent-strong);border-radius:11px;padding:8px 14px;font-size:12.5px;font-weight:600;margin-bottom:4px'; sm.textContent='📋 สรุป: '+p.join('  ·  '); th.appendChild(sm); }
       (r.messages||[]).forEach(function(m){ var d=document.createElement('div'); d.className='row '+(m.from==='bot'?'b':'c'); d.innerHTML=(m.from==='bot'?'<div class="who">🌿 น้องลีฟ</div>':'')+esc(m.text); th.appendChild(d); }); th.scrollTop=th.scrollHeight; }).catch(function(){}); }
@@ -268,6 +268,7 @@
   function togglePauseUser(){ if(!curChatId)return; var next=!curChatPaused; api('pauseuser',{method:'POST',body:JSON.stringify({userId:curChatId,on:next})}).then(function(r){ setPauseBtn(!!r.paused); toast(r.paused?'⏸️ พักบอทแชทนี้ — พี่ตอบเอง':'▶️ เปิดบอทแชทนี้แล้ว'); }).catch(function(){ toast('เปลี่ยนไม่สำเร็จ'); }); }
   var QR={ bank:'โอนมัดจำได้ที่ 🏦 ธ.กสิกรไทย เลขบัญชี 230-1-67564-2 ชื่อบัญชี บจก.วิลลาเดอลีฟ ค่ะ โอนแล้วส่งสลิปกลับมาได้เลยนะคะ 🌿', map:'พิกัดที่พักค่ะ 📍 https://maps.app.goo.gl/SC5nvt8kGNBbNdP27', thanks:'ขอบคุณมากค่ะ 🌿 แล้วเจอกันที่ Villa de Leaf นะคะ 😊', offhours:'ตอนนี้อยู่นอกเวลาทำการพอดีค่ะ 🙏 เดี๋ยวแอดมินติดต่อกลับมายืนยันให้ในเวลาทำการนะคะ (จ-ศ 10:00–22:30 · ส-อา 11:00–23:00) ขอบคุณค่ะ' };
   function qr(k){ var box=document.getElementById('custBox'); box.value=QR[k]||''; box.focus(); }
+  function copyPhone(p){ try{ navigator.clipboard.writeText(p); toast('📋 ก๊อปเบอร์ '+p+' แล้ว'); }catch(e){} }
 
   /* LEADS */
   function loadLeads(){ api('leads').then(function(r){ var list=r.leads||[]; var el=document.getElementById('leadList');
