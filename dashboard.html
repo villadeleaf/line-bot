@@ -257,16 +257,16 @@
   function renderBell(list){ var el=document.getElementById('bellList'); if(!el)return;
     if(!list.length){ el.innerHTML='<div class="empty" style="padding:16px 6px">ยังไม่มีแจ้งเตือน 🌿<br><span style="font-size:11px">(จอง / ตอบไม่ได้ / ห้องว่าง จะเด้งที่นี่)</span></div>'; return; }
     el.innerHTML='';
-    list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,' · ');
+    list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,'\n');
       var d=document.createElement('div'); d.className='ns-item'; d.onclick=function(ev){ ev.stopPropagation(); document.getElementById('bellPanel').style.display='none'; tab('chat'); openChat(a.userId,nm); };
-      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-3);font-size:11px;line-height:1.45;max-height:46px;overflow:hidden">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋</button>';
+      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;line-height:1.5;white-space:pre-line;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋</button>';
       el.appendChild(d); }); }
   function renderNotifs(list){ var el=document.getElementById('notifList'); if(!el)return;
     if(!list.length){ el.innerHTML='<div class="empty" style="padding:18px 6px">ยังไม่มีแจ้งเตือน 🌿<br><span style="font-size:11px">(จอง / ตอบไม่ได้ / ห้องว่าง จะเด้งที่นี่)</span></div>'; return; }
     el.innerHTML='';
-    list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,' · ');
+    list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,'\n');
       var d=document.createElement('div'); d.className='ns-item'; d.onclick=function(){ tab('chat'); openChat(a.userId,nm); };
-      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--ink-3);font-size:11px;white-space:normal;line-height:1.45;max-height:46px;overflow:hidden">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋</button>';
+      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;white-space:pre-line;line-height:1.5;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋</button>';
       el.appendChild(d);
     });
   }
