@@ -310,6 +310,19 @@ function hasBookingIntent(history) {
   const t = (history || []).map((m) => (typeof m.content === "string" ? m.content : "")).join(" ");
   return /จอง|สนใจ|ห้องพัก|ราคา|ห้องว่าง|กี่คืน|เข้าพัก|\d+\s*(?:ท่าน|คน|คืน)/.test(t);
 }
+// จับ "ลูกค้าคนนี้ต้องการอะไร" (ไว้โชว์ในแจ้งเตือน — ไม่ต้องเปิดแชทก็รู้)
+function classifyTopic(history) {
+  const cust = (history || []).filter((m) => m.role === "user" && typeof m.content === "string" && m.content.indexOf("(ระบบ)") !== 0).map((m) => m.content).join(" ");
+  if (/room\s*service|รูมเซอร์วิส|สั่งอาหาร|น้ำดื่ม|ผ้าเช็ดตัว|เพิ่มเตียง|ขอ.{0,6}(ที่ห้อง|น้ำ|ผ้า|ของ)/i.test(cust)) return "🛎️ ขอ Room Service / ของใช้";
+  if (/โอนแล้ว|สลิป|หลักฐานการโอน|จ่ายแล้ว/i.test(cust)) return "📎 ส่งสลิป / แจ้งโอน";
+  if (/ผ่านแอดมิน|คุยกับ(คน|แอดมิน|เจ้าหน้าที่)/i.test(cust)) return "🙋 ขอคุยแอดมิน";
+  if (/จอง|สนใจ(จะ)?(จอง|เข้าพัก)|อยากพัก|อยากจอง/i.test(cust)) return "💰 สนใจจอง";
+  if (/ห้องว่าง|ราคา|กี่บาท|กี่คืน|เท่าไหร่|เท่าไร|โปร/i.test(cust)) return "🏨 ถามห้องว่าง / ราคา";
+  if (/สัตว์เลี้ยง|หมา|แมว|เพ็ท|\bpet\b/i.test(cust)) return "🐾 ถามเรื่องสัตว์เลี้ยง";
+  if (/ที่ตั้ง|พิกัด|แผนที่|เดินทาง|ไปยังไง|เส้นทาง/i.test(cust)) return "📍 ถามเส้นทาง / พิกัด";
+  if (/เมนู|อาหาร|คาเฟ่|กาแฟ|เครื่องดื่ม/i.test(cust)) return "🍽️ ถามอาหาร / เมนู";
+  return "💬 สอบถามทั่วไป";
+}
 const imgProgress = new Map(); // userId -> { key: จำนวนที่ส่งไปแล้ว }
 const seenEvents = new Set(); // webhookEventId ที่ประมวลผลแล้ว (กันตอบซ้ำจาก LINE redelivery)
 // เก็บว่าข้อความแจ้งเตือนที่ส่งให้แอดมิน (messageId) = ของลูกค้าคนไหน → ตอนแอดมิน Reply จะได้รู้ว่าตอบให้ใคร
@@ -949,7 +962,7 @@ app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res)
 // ห้องแชท: รายชื่อบทสนทนาลูกค้า (สดจาก chatMeta) + อ่านบทสนทนารายคน (จาก conversations)
 app.get("/leaf/api/chats", dashAuth, (_req, res) => {
   const list = [];
-  chatMeta.forEach((v, k) => list.push({ userId: k, name: v.name || "", pictureUrl: v.pictureUrl || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman }));
+  chatMeta.forEach((v, k) => list.push({ userId: k, name: v.name || "", pictureUrl: v.pictureUrl || "", at: v.at || "", lastMsg: v.lastMsg || "", needsHuman: !!v.needsHuman, topic: classifyTopic(conversations.get(k) || []) }));
   list.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
   res.json({ chats: list.slice(0, 50) });
 });
