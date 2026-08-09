@@ -108,8 +108,9 @@
   .cust-side .cs-topic{text-align:center;color:var(--accent-strong);font-weight:600;font-size:12.5px;margin-bottom:14px}
   .cust-side .cs-row{background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:8px;line-height:1.6}
   .cust-side .cs-btn{display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;margin-top:6px;text-decoration:none;cursor:pointer;font-family:inherit}
-  @media (min-width:1280px){ .notif-side{display:block} .cust-side{display:block} .wrap{margin-left:300px;margin-right:330px} }
-  @media (min-width:1080px) and (max-width:1279px){ .notif-side{display:block} .wrap{margin-right:330px} }
+  /* แผงข้างโชว์เฉพาะแท็บแชทเท่านั้น (แท็บอื่นเต็มความกว้าง สะอาดตา) */
+  @media (min-width:1280px){ #app.chat-active .notif-side{display:block} #app.chat-active .cust-side{display:block} #app.chat-active .wrap{margin-left:300px;margin-right:330px} }
+  @media (min-width:1080px) and (max-width:1279px){ #app.chat-active .notif-side{display:block} #app.chat-active .wrap{margin-right:330px} }
 </style>
 </head>
 <body>
@@ -227,9 +228,9 @@
   document.getElementById('pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
   function logout(){ sessionStorage.removeItem('leafkey'); location.reload(); }
 
-  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); if(v==='chat')loadChats(); if(v==='leads')loadLeads(); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
+  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); document.getElementById('app').classList.toggle('chat-active', v==='chat'); if(v==='chat')loadChats(); if(v==='leads')loadLeads(); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
 
-  function boot(){ resetTest(); loadChats(); loadLeads(); loadNotifs(); startAuto(); }
+  function boot(){ document.getElementById('app').classList.add('chat-active'); resetTest(); loadChats(); loadLeads(); loadNotifs(); startAuto(); }
 
   /* CHAT + LEADS + แผงแจ้งเตือน (อัปเดตสดอัตโนมัติทุก 5 วิ) */
   var autoTimer=null, curChatId=null;
