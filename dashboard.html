@@ -140,6 +140,7 @@
   <div class="tabs">
     <button class="tab active" data-v="chat" onclick="tab('chat')">💬 แชท</button>
     <button class="tab" data-v="leads" onclick="tab('leads')">📋 ลูกค้า</button>
+    <button class="tab" data-v="alerts" onclick="tab('alerts')">🔔 แจ้งเตือน</button>
     <button class="tab" data-v="test" onclick="tab('test')">🧪 ทดลอง</button>
     <button class="tab" data-v="teach" onclick="tab('teach')">📚 สอน</button>
     <button class="tab" data-v="status" onclick="tab('status')">📊 สถานะ</button>
@@ -172,6 +173,12 @@
     <div class="view" id="v-leads">
       <h2>📋 กระดานลูกค้า (lead)</h2><div class="sub">ลูกค้าที่มีแววจอง — น้องลีฟสรุปให้แล้ว ตามปิดการขายได้เลย 🌿</div>
       <div id="leadList"><div class="empty">กำลังโหลด…</div></div>
+    </div>
+
+    <!-- ALERTS -->
+    <div class="view" id="v-alerts">
+      <h2>🔔 แจ้งเตือน</h2><div class="sub">จอง / ตอบไม่ได้ / ห้องว่าง — แตะ “📋 ก๊อป” ส่งลูกค้าได้เลย</div>
+      <div id="alertsPage"><div class="empty">กำลังโหลด…</div></div>
     </div>
 
     <!-- TEST -->
@@ -235,7 +242,7 @@
   document.getElementById('pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
   function logout(){ sessionStorage.removeItem('leafkey'); location.reload(); }
 
-  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); document.getElementById('app').classList.toggle('chat-active', v==='chat'); if(v==='chat')loadChats(); if(v==='leads')loadLeads(); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
+  function tab(v){ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.v===v);}); document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');}); document.getElementById('v-'+v).classList.add('active'); document.getElementById('app').classList.toggle('chat-active', v==='chat'); if(v==='chat')loadChats(); if(v==='leads')loadLeads(); if(v==='alerts')loadNotifs(); if(v==='teach')loadFaq(); if(v==='status')loadStatus(); }
 
   function boot(){ document.getElementById('app').classList.add('chat-active'); resetTest(); loadChats(); loadLeads(); loadNotifs(); startAuto(); }
 
@@ -254,22 +261,15 @@
   function enableBadge(e){ e.stopPropagation(); if(!('Notification' in window)){ toast('เครื่องนี้ไม่รองรับ'); return; }
       Notification.requestPermission().then(function(p){ if(p==='granted'){ document.getElementById('enableBadgeBtn').style.display='none'; toast('🔴 เปิดเลขแดงบนไอคอนแล้ว!'); loadChats(); } else { toast('ยังไม่ได้อนุญาต — ลองใหม่ได้'); } }); }
   document.addEventListener('click',function(){ var p=document.getElementById('bellPanel'); if(p)p.style.display='none'; });
-  function renderBell(list){ var el=document.getElementById('bellList'); if(!el)return;
-    if(!list.length){ el.innerHTML='<div class="empty" style="padding:16px 6px">ยังไม่มีแจ้งเตือน 🌿<br><span style="font-size:11px">(จอง / ตอบไม่ได้ / ห้องว่าง จะเด้งที่นี่)</span></div>'; return; }
-    el.innerHTML='';
-    list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,'\n');
-      var d=document.createElement('div'); d.className='ns-item'; d.onclick=function(ev){ ev.stopPropagation(); document.getElementById('bellPanel').style.display='none'; tab('chat'); openChat(a.userId,nm); };
-      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;line-height:1.5;white-space:pre-line;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋 ก๊อป</button>';
-      el.appendChild(d); }); }
-  function renderNotifs(list){ var el=document.getElementById('notifList'); if(!el)return;
+  function fillAlerts(el, list){ if(!el)return;
     if(!list.length){ el.innerHTML='<div class="empty" style="padding:18px 6px">ยังไม่มีแจ้งเตือน 🌿<br><span style="font-size:11px">(จอง / ตอบไม่ได้ / ห้องว่าง จะเด้งที่นี่)</span></div>'; return; }
     el.innerHTML='';
     list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,'\n');
-      var d=document.createElement('div'); d.className='ns-item'; d.onclick=function(){ tab('chat'); openChat(a.userId,nm); };
-      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;white-space:pre-line;line-height:1.5;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:5px 9px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋 ก๊อป</button>';
-      el.appendChild(d);
-    });
-  }
+      var d=document.createElement('div'); d.className='ns-item'; d.style.alignItems='flex-start'; d.onclick=function(){ var bp=document.getElementById('bellPanel'); if(bp)bp.style.display='none'; tab('chat'); openChat(a.userId,nm); };
+      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;white-space:pre-line;line-height:1.5;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:6px 11px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋 ก๊อป</button>';
+      el.appendChild(d); }); }
+  function renderBell(list){ fillAlerts(document.getElementById('bellList'), list); }
+  function renderNotifs(list){ fillAlerts(document.getElementById('notifList'), list); fillAlerts(document.getElementById('alertsPage'), list); }
   var _chats=[], _lastKey='';
   function loadChats(){ api('chats').then(function(r){ _chats=r.chats||[]; updateBadge(_chats.filter(function(x){return x.needsHuman;}).length);
       var key=_chats.map(function(c){return c.userId+'|'+c.at;}).join(','); if(_lastKey && key!==_lastKey) beep(); _lastKey=key;
