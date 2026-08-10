@@ -293,6 +293,19 @@ const conversations = new Map();
 const chatMeta = new Map();
 // ป้ายสถานะแชทที่แอดมินติดเอง (จองแล้ว/รอโอน/ปิด) — userId → status string
 const chatStatus = new Map();
+// เติมชื่อ+รูปจาก LINE เอง (ถ้าเฮียไม่ได้ส่งมา) — ใช้ token @villadeleaf (replyClient) ดึงโปรไฟล์
+function enrichProfile(userId) {
+  const m = chatMeta.get(userId);
+  if (!m || m._enriched) return;
+  if (m.name && m.pictureUrl) return;
+  m._enriched = true; chatMeta.set(userId, m);
+  replyClient.getProfile(userId).then(function (p) {
+    const mm = chatMeta.get(userId) || {};
+    if (!mm.name) mm.name = (p.displayName || "").slice(0, 40);
+    if (!mm.pictureUrl) mm.pictureUrl = (p.pictureUrl || "").slice(0, 400);
+    chatMeta.set(userId, mm);
+  }).catch(function () {});
+}
 
 // สกัด "สรุปการจอง" จากบทสนทนาลูกค้าแบบเบา ๆ (จำนวนคน/วัน/สัตว์เลี้ยง/ห้องที่พูดถึง) — ไม่ใช้ AI
 function extractSummary(history) {
@@ -1266,6 +1279,7 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
   const _b = req.body || {};
   const _pic = _b.pictureUrl || _b.picture || _b.pictureURL || _b.picUrl || _b.avatar || _b.photo || _b.image || _b.profileImage || _b.img || _b.avatarUrl || "";
   chatMeta.set(userId, { name: String(_b.name || "").slice(0, 40), pictureUrl: String(_pic).slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: needsHuman });
+  enrichProfile(userId);
   res.json({ reply: clean, needsHuman, type: alertType, detail: alertDetail, images });
 });
 
