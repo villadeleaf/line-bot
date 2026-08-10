@@ -97,8 +97,9 @@
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--accent);color:#fff;padding:12px 20px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.3s;z-index:70}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   /* แผงแจ้งเตือนสดด้านข้าง (โชว์เฉพาะจอกว้าง = คอม) */
-  .notif-side{display:none;position:fixed;top:100px;right:18px;width:300px;max-height:calc(100vh - 130px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:15px;box-shadow:var(--shadow);padding:14px;z-index:5}
-  .notif-side h3{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:7px}
+  .notif-side{display:none;position:fixed;top:96px;right:18px;width:370px;max-height:calc(100vh - 118px);overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px;z-index:5}
+  .notif-side h3{margin:0 0 12px;font-size:16px;display:flex;align-items:center;gap:7px}
+  .notif-side .ns-item{padding:12px 6px}
   .ns-item{display:flex;gap:9px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border-soft);cursor:pointer}
   .ns-item:hover{background:var(--surface-2)}
   /* แผงข้อมูลลูกค้าด้านซ้าย (ใช้พื้นที่ว่าง บนคอม) */
@@ -109,8 +110,8 @@
   .cust-side .cs-row{background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:8px;line-height:1.6}
   .cust-side .cs-btn{display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;margin-top:6px;text-decoration:none;cursor:pointer;font-family:inherit}
   /* แผงข้างโชว์เฉพาะแท็บแชทเท่านั้น (แท็บอื่นเต็มความกว้าง สะอาดตา) */
-  @media (min-width:1280px){ #app.chat-active .notif-side{display:block} #app.chat-active .cust-side{display:block} #app.chat-active .wrap{margin-left:300px;margin-right:330px} }
-  @media (min-width:1080px) and (max-width:1279px){ #app.chat-active .notif-side{display:block} #app.chat-active .wrap{margin-right:330px} }
+  @media (min-width:1280px){ #app.chat-active .notif-side{display:block} #app.chat-active .cust-side{display:block} #app.chat-active .wrap{margin-left:300px;margin-right:400px} }
+  @media (min-width:1080px) and (max-width:1279px){ #app.chat-active .notif-side{display:block} #app.chat-active .wrap{margin-right:400px} }
 </style>
 </head>
 <body>
@@ -151,7 +152,8 @@
     <div class="view active" id="v-chat">
       <div id="chatListWrap">
         <div class="rowbar"><div class="grow"><h2>💬 ห้องแชท</h2><div class="sub" style="margin:0">บทสนทนากับลูกค้าจริง — อัปเดตสดอัตโนมัติ</div></div><span class="mini" style="color:var(--accent-strong)">🟢 สด</span></div>
-        <input id="chatSearch" placeholder="🔍 ค้นหาลูกค้า / ข้อความ..." oninput="renderChatList()" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--ink);font-size:13px;outline:none;margin-bottom:10px">
+        <div id="chatOverview" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap"></div>
+        <input id="chatSearch" placeholder="🔍 ค้นหาลูกค้า / ข้อความ..." oninput="renderChatList()" style="width:100%;padding:11px 14px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);color:var(--ink);font-size:14px;outline:none;margin-bottom:12px">
         <div id="chatList"><div class="empty">กำลังโหลด…</div></div>
       </div>
       <div id="chatThreadWrap" style="display:none">
@@ -253,7 +255,7 @@
   /* แผงแจ้งเตือนสดด้านข้าง (ฟรี ไม่ใช้ LINE push) */
   var _seenAlerts=0, _alerts=[];
   function copyAlert(i){ var a=_alerts[i]; if(!a)return; var t=(a.title||'แจ้งเตือน')+'\n👤 '+(a.name||'ลูกค้า')+'\n\n'+(a.detail||'').replace(/\s*\/\s*/g,'\n'); if(a.type==='booking'){ t+='\n\n🏦 ธนาคารกสิกรไทย\nเลขบัญชี 230-1-67564-2\nชื่อบัญชี บจก.วิลลาเดอลีฟ\n\nเมื่อโอนแล้วรบกวนส่งสลิปกลับมานะคะ 🌿'; } try{navigator.clipboard.writeText(t);toast('📋 ก๊อปแล้ว วางส่งลูกค้าได้เลย');}catch(e){} }
-  function loadNotifs(){ api('alerts').then(function(r){ var list=r.alerts||[]; _alerts=list; renderNotifs(list); renderBell(list);
+  function loadNotifs(){ api('alerts').then(function(r){ var list=r.alerts||[]; _alerts=list; renderNotifs(list); renderBell(list); renderOverview();
       var bb=document.getElementById('bellBadge'); if(bb){ var fresh=Math.max(0,list.length-_seenAlerts); bb.textContent=fresh; bb.style.display=fresh>0?'flex':'none'; } }).catch(function(){}); }
   function toggleBell(e){ e.stopPropagation(); var p=document.getElementById('bellPanel'); var open=p.style.display==='block'; p.style.display=open?'none':'block';
       if(!open){ var eb=document.getElementById('enableBadgeBtn'); if(eb && 'Notification' in window && Notification.permission!=='granted') eb.style.display='block';
@@ -266,14 +268,19 @@
     el.innerHTML='';
     list.forEach(function(a,i){ var nm=a.name||'ลูกค้า'; var detail=(a.detail||'').replace(/\s*\/\s*/g,'\n');
       var d=document.createElement('div'); d.className='ns-item'; d.style.alignItems='flex-start'; d.onclick=function(){ var bp=document.getElementById('bellPanel'); if(bp)bp.style.display='none'; tab('chat'); openChat(a.userId,nm); };
-      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12.5px">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:11.5px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:11px;white-space:pre-line;line-height:1.5;margin-top:3px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:6px 11px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋 ก๊อป</button>';
+      d.innerHTML='<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px">'+esc(a.title||'🔔 แจ้งเตือน')+'</div><div style="color:var(--accent-strong);font-size:13px;font-weight:600">'+esc(nm)+'</div><div style="color:var(--ink-2);font-size:12.5px;white-space:pre-line;line-height:1.55;margin-top:4px">'+esc(detail)+'</div></div><button class="mini" style="flex:none;padding:8px 13px;font-size:13px;align-self:flex-start" onclick="event.stopPropagation();copyAlert('+i+')">📋 ก๊อป</button>';
       el.appendChild(d); }); }
   function renderBell(list){ fillAlerts(document.getElementById('bellList'), list); }
   function renderNotifs(list){ fillAlerts(document.getElementById('notifList'), list); fillAlerts(document.getElementById('alertsPage'), list); }
   var _chats=[], _lastKey='';
   function loadChats(){ api('chats').then(function(r){ _chats=r.chats||[]; updateBadge(_chats.filter(function(x){return x.needsHuman;}).length);
       var key=_chats.map(function(c){return c.userId+'|'+c.at;}).join(','); if(_lastKey && key!==_lastKey) beep(); _lastKey=key;
-      renderChatList(); }).catch(function(){}); }
+      renderChatList(); renderOverview(); }).catch(function(){}); }
+  function renderOverview(){ var el=document.getElementById('chatOverview'); if(!el)return;
+    var total=_chats.length, need=_chats.filter(function(x){return x.needsHuman;}).length, al=(_alerts||[]).length;
+    function card(ic,l,n,c){ return '<div style="flex:1;min-width:96px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 15px"><div style="font-size:12.5px;color:var(--ink-2);font-weight:600">'+ic+' '+l+'</div><div style="font-size:28px;font-weight:800;margin-top:2px;color:'+(c||'var(--ink)')+'">'+n+'</div></div>'; }
+    el.innerHTML=card('💬','แชท',total,'')+card('🙋','ต้องตอบ',need,need?'var(--warn-ink)':'')+card('🔔','แจ้งเตือน',al,'var(--accent-strong)');
+  }
   function beep(){ try{ var A=window.AudioContext||window.webkitAudioContext; if(!A)return; var ctx=window._actx||(window._actx=new A()); if(ctx.state==='suspended')ctx.resume(); var o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=0.07; o.connect(g); g.connect(ctx.destination); o.start(); setTimeout(function(){o.stop();},170);}catch(e){} }
   function renderChatList(){ var el=document.getElementById('chatList'); if(!el)return; var sb=document.getElementById('chatSearch'); var q=sb?sb.value.toLowerCase():'';
       var list=_chats.filter(function(c){ return !q || (c.name||'').toLowerCase().indexOf(q)>=0 || (c.lastMsg||'').toLowerCase().indexOf(q)>=0 || (c.topic||'').toLowerCase().indexOf(q)>=0; });
