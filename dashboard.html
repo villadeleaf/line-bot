@@ -78,6 +78,13 @@
   .faq .q{font-weight:700;font-size:14px;margin-bottom:4px}
   .faq .a{color:var(--ink-2);font-size:13px;line-height:1.6}
   .empty{text-align:center;color:var(--ink-3);padding:34px 10px;font-size:13.5px}
+  .empty-hero{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:46vh;padding:30px 16px;gap:4px}
+  .eh-icon{width:76px;height:76px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:38px;margin-bottom:14px;box-shadow:0 6px 22px rgba(0,0,0,.12)}
+  .eh-title{font-size:19px;font-weight:800;color:var(--ink)}
+  .eh-sub{font-size:13.5px;color:var(--ink-2);line-height:1.7;margin-top:6px;max-width:420px}
+  .eh-chips{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:20px}
+  .eh-chip{background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:9px 16px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;transition:.15s}
+  .eh-chip:hover{border-color:var(--accent-strong);color:var(--accent-strong);transform:translateY(-1px)}
   /* status */
   .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
   .stat{padding:16px 18px}.stat .l{font-size:12.5px;color:var(--ink-2);font-weight:600}
@@ -110,7 +117,7 @@
   .cust-side .cs-row{background:var(--surface-2);border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:8px;line-height:1.6}
   .cust-side .cs-btn{display:block;width:100%;text-align:center;padding:10px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;margin-top:6px;text-decoration:none;cursor:pointer;font-family:inherit}
   /* แผงข้างโชว์เฉพาะแท็บแชทเท่านั้น (แท็บอื่นเต็มความกว้าง สะอาดตา) */
-  @media (min-width:1280px){ #app.chat-active .notif-side{display:block} #app.chat-active .cust-side{display:block} #app.chat-active .wrap{margin-left:300px;margin-right:400px} }
+  @media (min-width:1280px){ #app.chat-active .notif-side{display:block} #app.chat-active .wrap{margin-right:400px} #app.chat-active.has-chat .cust-side{display:block} #app.chat-active.has-chat .wrap{margin-left:300px} }
   @media (min-width:1080px) and (max-width:1279px){ #app.chat-active .notif-side{display:block} #app.chat-active .wrap{margin-right:400px} }
 </style>
 </head>
@@ -284,7 +291,9 @@
   function beep(){ try{ var A=window.AudioContext||window.webkitAudioContext; if(!A)return; var ctx=window._actx||(window._actx=new A()); if(ctx.state==='suspended')ctx.resume(); var o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=880; g.gain.value=0.07; o.connect(g); g.connect(ctx.destination); o.start(); setTimeout(function(){o.stop();},170);}catch(e){} }
   function renderChatList(){ var el=document.getElementById('chatList'); if(!el)return; var sb=document.getElementById('chatSearch'); var q=sb?sb.value.toLowerCase():'';
       var list=_chats.filter(function(c){ return !q || (c.name||'').toLowerCase().indexOf(q)>=0 || (c.lastMsg||'').toLowerCase().indexOf(q)>=0 || (c.topic||'').toLowerCase().indexOf(q)>=0; });
-      if(!list.length){ el.innerHTML='<div class="empty">'+(_chats.length?'ไม่พบแชทที่ค้นหา':'ยังไม่มีแชทลูกค้า — จะขึ้นเองเมื่อมีลูกค้าทัก 🌿')+'</div>'; return; }
+      if(!list.length){ el.innerHTML = _chats.length
+        ? '<div class="empty">ไม่พบแชทที่ค้นหา 🔍</div>'
+        : '<div class="empty-hero"><div class="eh-icon">🌿</div><div class="eh-title">ยังไม่มีแชทตอนนี้</div><div class="eh-sub">เมื่อลูกค้าทักเข้ามาทาง LINE <b>@villadeleaf</b><br>แชทจะเด้งขึ้นที่นี่อัตโนมัติ พร้อมเสียงแจ้งเตือน 🔔</div><div class="eh-chips"><span class="eh-chip" onclick="enableBadge()">🔔 เปิดแจ้งเตือน</span><span class="eh-chip" onclick="tab(\'teach\')">📚 สอนน้องลีฟ</span><span class="eh-chip" onclick="tab(\'test\')">🧪 ทดลองคุย</span></div></div>'; return; }
       el.innerHTML='';
       list.forEach(function(c){ var d=document.createElement('div'); d.className='card'; d.style.cssText='padding:13px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:center;cursor:pointer';
         d.onclick=function(){openChat(c.userId,c.name);};
@@ -294,8 +303,8 @@
         var av=c.pictureUrl?'<img src="'+esc(c.pictureUrl)+'" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none">':'<div style="width:42px;height:42px;border-radius:50%;background:var(--surface-3);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none">'+esc(nm.slice(0,1).toUpperCase())+'</div>';
         d.innerHTML=av+'<div style="flex:1;min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(nm)+' '+stb+'</div><div style="color:var(--accent-strong);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.topic||'')+'</div><div style="color:var(--ink-3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(c.lastMsg||'')+'</div></div><span style="color:var(--ink-3);font-size:12px;flex:none">'+esc(c.at||'')+'</span>'+badge;
         el.appendChild(d); }); }
-  function openChat(uid,name){ curChatId=uid; document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
-  function backChats(){ curChatId=null; document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; var cs=document.getElementById('custSide'); if(cs)cs.innerHTML='<div class="empty" style="padding:24px 6px">เลือกแชทเพื่อดูข้อมูลลูกค้า 🌿</div>'; loadChats(); }
+  function openChat(uid,name){ curChatId=uid; document.getElementById('app').classList.add('has-chat'); document.getElementById('chatListWrap').style.display='none'; document.getElementById('chatThreadWrap').style.display='block'; document.getElementById('chatName').textContent=name||'ลูกค้า'; loadThread(); }
+  function backChats(){ curChatId=null; document.getElementById('app').classList.remove('has-chat'); document.getElementById('chatThreadWrap').style.display='none'; document.getElementById('chatListWrap').style.display='block'; var cs=document.getElementById('custSide'); if(cs)cs.innerHTML='<div class="empty" style="padding:24px 6px">เลือกแชทเพื่อดูข้อมูลลูกค้า 🌿</div>'; loadChats(); }
   function sendReply(){ var box=document.getElementById('custBox'); var v=box.value.trim(); if(!v||!curChatId)return;
     if(!confirm('ส่งข้อความนี้ถึงลูกค้าจริงนะคะ?\n\n“'+v+'”')) return;
     box.disabled=true; document.getElementById('custSend').disabled=true;
