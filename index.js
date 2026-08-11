@@ -16,18 +16,27 @@ const AVAIL_API_URL = (process.env.AVAIL_API_URL || "https://backend.villadeleaf
 const AVAIL_API_KEY = (process.env.AVAIL_API_KEY || "").trim();
 
 async function fetchAvailability(checkin, checkout) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 6000);
-  try {
-    const r = await fetch(`${AVAIL_API_URL}?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}`, {
-      headers: { "x-api-key": AVAIL_API_KEY },
-      signal: ctrl.signal,
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
-  } finally {
-    clearTimeout(t);
+  // ยิงถาม API ปฏิทิน — timeout 12 วิ/ครั้ง + ลองซ้ำอีก 1 ครั้งถ้าครั้งแรกช้า/พลาด
+  //  (ระบบเฮียรอคำตอบเราได้ ~50 วิ · เดิม 6 วิสั้นไป — ถ้า backend/Render เพิ่งตื่นจาก sleep แล้วตอบช้าเกิน 6 วิ
+  //   บอทจะยอมแพ้เงียบ ๆ แล้ว fallback เป็น "ขอเช็คทีม" ทั้งที่จริง ๆ มีห้องว่าง)
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const r = await fetch(`${AVAIL_API_URL}?checkin=${encodeURIComponent(checkin)}&checkout=${encodeURIComponent(checkout)}`, {
+        headers: { "x-api-key": AVAIL_API_KEY },
+        signal: ctrl.signal,
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      clearTimeout(t);
+    }
   }
+  throw lastErr;
 }
 
 // ---- ตัวช่วยวันที่ (UTC ล้วน กัน timezone เพี้ยน) + ป้ายไทย ----
