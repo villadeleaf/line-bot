@@ -321,6 +321,15 @@ async function generateReply(history, extraKnowledge = "") {
   const MONEY_RE = /จอง|มัดจำ|ยอดรวม|รวมเท่า|รวมทั้งหมด|ทั้งหมดกี่|ทั้งหมดเท่า|สรุป|เตียงเสริม|กรุ๊ป|เหมา|หลายห้อง|กี่ห้อง|\d+\s*ห้อง/;
   const effort = hasPhone || MONEY_RE.test(recentText) ? "high" : "medium";
 
+  // 🛡️ กัน 400 "assistant prefill / ต้องจบด้วย user message": ตอนลูกค้าพิมพ์รัว ๆ (หลายข้อความติดกัน)
+  //  เกิด race — คำตอบของข้อความก่อนหน้าถูก push ต่อท้าย history หลังข้อความใหม่ → history จบด้วย assistant → API ตีกลับ 400 → บอทไม่ตอบ
+  //  แก้: ทำสำเนา + ตัด assistant ท้ายสุดออกให้ "จบด้วย user เสมอ" ก่อนส่งเข้า API
+  let safeHistory = Array.isArray(history) ? history.slice() : history;
+  while (safeHistory.length && safeHistory[safeHistory.length - 1] && safeHistory[safeHistory.length - 1].role === "assistant") {
+    safeHistory.pop();
+  }
+  if (!safeHistory.length) safeHistory = history; // กันกรณีสุดโต่ง (ว่างเปล่า) — ปล่อยให้ path เดิมจัดการ
+
   // ลองเรียก AI ใหม่เองอีกชั้น เผื่อ API overload/สะดุด (529/429/5xx) — หน่วงเพิ่มขึ้นเรื่อย ๆ
   let response;
   let lastErr;
@@ -331,7 +340,7 @@ async function generateReply(history, extraKnowledge = "") {
         model: MODEL,
         max_tokens: 8000, // เผื่อ thinking กินเยอะตอนคิดคอมโบกรุ๊ปใหญ่ (กัน stop=max_tokens แล้ว text ว่าง) · จ่ายตาม token ที่ออกจริงเท่านั้น
         system,
-        messages: history,
+        messages: safeHistory,
       };
       if (useEffort) params.output_config = { effort }; // medium=คุยทั่วไป (ประหยัด) · high=คิดเงิน/จอง (แม่นเลข) — คำตอบเหมือนเดิม
       response = await anthropic.messages.create(params);
