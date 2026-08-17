@@ -247,6 +247,36 @@ let botPaused = false;
 const bootAt = Date.now();
 // พักน้องลีฟ "รายคน" จากหน้า /leaf (แอดมินกดคุยเอง) — userId ที่พักอยู่ (คนละตัวกับ handover เดิม)
 const leafPausedUsers = new Set();
+
+// ---- จำสถานะ "พักบอท" ถาวร (กันหายตอน deploy) — เก็บใน Google Sheet เดิม (FAQ) เป็น marker __PAUSE__<key> = on/off ----
+//  key = userId (พักรายคน) หรือ "GLOBAL" (พักทั้งระบบ) · append-only: ค่าล่าสุดต่อ key = สถานะจริง
+const PAUSE_PREFIX = "__PAUSE__";
+async function persistPause(key, on) {
+  if (!faqEnabled()) return;
+  try {
+    await teachFaq(PAUSE_PREFIX + key, on ? "on" : "off");
+  } catch (e) {
+    console.error("persistPause error:", e.message); // เขียนไม่ได้ก็ไม่พัง (in-memory ยังทำงาน)
+  }
+}
+async function loadPausedFromSheet() {
+  if (!faqEnabled()) return;
+  try {
+    const items = await loadFaq(); // เรียงจากเก่า→ใหม่ · ค่าล่าสุดต่อ key ชนะ
+    for (const x of items) {
+      if (!x || !x.q || x.q.indexOf(PAUSE_PREFIX) !== 0) continue;
+      const key = x.q.slice(PAUSE_PREFIX.length);
+      const on = String(x.a).trim().toLowerCase() === "on";
+      if (key === "GLOBAL") botPaused = on;
+      else if (on) leafPausedUsers.add(key);
+      else leafPausedUsers.delete(key);
+    }
+    console.log("loaded pause state from sheet: global=" + botPaused + " · users=" + leafPausedUsers.size);
+  } catch (e) {
+    console.error("loadPausedFromSheet error:", e.message);
+  }
+}
+loadPausedFromSheet();
 // รวม Readable stream → Buffer
 function streamToBuffer(stream) {
   return new Promise((resolve, reject) => {
@@ -952,7 +982,7 @@ app.get("/leaf/sw.js", (_req, res) => res.type("application/javascript").send("s
 app.get("/leaf/api/ping", dashAuth, (_req, res) => res.json({ ok: true }));
 
 app.get("/leaf/api/faq", dashAuth, async (_req, res) => {
-  try { const items = faqEnabled() ? await loadFaq() : []; res.json({ items }); }
+  try { const items = (faqEnabled() ? await loadFaq() : []).filter((x) => x && x.q && x.q.indexOf("__PAUSE__") !== 0); res.json({ items }); }
   catch (e) { res.status(200).json({ items: [], error: e.message }); }
 });
 app.post("/leaf/api/faq", dashAuth, express.json({ limit: "64kb" }), async (req, res) => {
@@ -983,6 +1013,7 @@ app.get("/leaf/api/status", dashAuth, async (_req, res) => {
 app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   botPaused = !!(req.body && req.body.on);
   console.log("dashboard: botPaused =", botPaused);
+  persistPause("GLOBAL", botPaused); // จำถาวร กันหายตอน deploy
   res.json({ paused: botPaused });
 });
 // ห้องแชท: รายชื่อบทสนทนาลูกค้า (สดจาก chatMeta) + อ่านบทสนทนารายคน (จาก conversations)
@@ -1015,7 +1046,9 @@ app.get("/leaf/api/alerts", dashAuth, (_req, res) => res.json({ alerts: recentAl
 app.post("/leaf/api/pauseuser", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   const uid = String((req.body && req.body.userId) || "");
   if (!uid) return res.status(400).json({ error: "no userId" });
-  if (req.body && req.body.on) leafPausedUsers.add(uid); else leafPausedUsers.delete(uid);
+  const on = !!(req.body && req.body.on);
+  if (on) leafPausedUsers.add(uid); else leafPausedUsers.delete(uid);
+  persistPause(uid, on); // จำถาวร กันหายตอน deploy
   res.json({ paused: leafPausedUsers.has(uid) });
 });
 // กระดาน lead: ลูกค้าที่มีแววจอง (สนใจแต่ยังไม่ปิด) พร้อมสรุปข้อมูล

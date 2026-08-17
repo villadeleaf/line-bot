@@ -60,8 +60,10 @@ async function teachFaq(q, a) {
 
 // แปลงความรู้ FAQ เป็นข้อความแนบให้ AI
 function faqText(items) {
-  if (!items || items.length === 0) return "";
-  const lines = items.map((x) => `- ถาม: ${x.q}\n  ตอบ: ${x.a}`).join("\n");
+  // กรอง marker สถานะพักบอท (__PAUSE__...) ออก ไม่ให้ปนความรู้ที่ส่งให้ AI
+  const real = (items || []).filter((x) => x && x.q && x.a && x.q.indexOf("__PAUSE__") !== 0);
+  if (real.length === 0) return "";
+  const lines = real.map((x) => `- ถาม: ${x.q}\n  ตอบ: ${x.a}`).join("\n");
   return `\n\n===== ความรู้เพิ่มเติมที่แอดมินสอนไว้ (ให้ใช้ตอบลูกค้าได้เลย ถือว่าถูกต้อง) =====\n${lines}`;
 }
 
