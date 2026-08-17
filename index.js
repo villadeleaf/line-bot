@@ -1250,6 +1250,17 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: req.body.test ? "AI error: " + (e && e.message ? e.message : String(e)) : "ระบบ AI ขัดข้องชั่วคราว รบกวนทีมงานเข้าไปดูแลลูกค้าต่อค่ะ" });
   }
 
+  // 🎬 เคสรีวิว/ครีเอเตอร์/Barter → บอทสั่ง [[PAUSEBOT]] → ปิดบอทแชทนี้อัตโนมัติ + จำถาวร + เงียบ (ไม่ตอบ ไม่เด้งทีม) · ทีมการตลาดเห็นในแชทแล้วดูแลต่อเอง
+  if (/\[\[\s*PAUSEBOT\s*\]{1,2}/i.test(replyText || "") && !fromAdmin && !req.body.test) {
+    leafPausedUsers.add(userId);
+    persistPause(userId, true);
+    const _pb = req.body || {};
+    chatMeta.set(userId, { name: String(_pb.name || "").slice(0, 40), pictureUrl: String(_pb.pictureUrl || _pb.picture || "").slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: true });
+    askRec.result = "🎬 รีวิว/ครีเอเตอร์ → ปิดบอทอัตโนมัติ (เงียบ)";
+    askRec.ms = Date.now() - _t0;
+    return res.status(200).json({ reply: "", needsHuman: false, paused: true });
+  }
+
   // ถ้าน้องลีฟเจอเคสที่ต้องให้คนดู (จอง/ห้องว่าง/ส่วนลด/ตอบไม่ได้):
   //   (1) ส่ง needsHuman + type กลับ → ระบบเฮียเด้งเคสนี้ขึ้น "กล่องเขียวแชทน้องลีฟ"
   //   (2) เด้งเข้า LINE ส่วนตัวแอดมินด้วย (ตัวสำรอง ระหว่างที่ระบบเฮียยังต่อกล่องเขียวไม่เสร็จ)
