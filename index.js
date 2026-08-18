@@ -1093,8 +1093,22 @@ app.post("/leaf/api/reply", dashAuth, express.json({ limit: "16kb" }), async (re
 //  ระบบหัวหน้ายิง POST /ask {userId, message, name} พร้อม header x-nong-secret → ได้ {reply}
 //  น้องลีฟจำบทสนทนาต่อเนื่องด้วย userId (ใช้ conversations Map เดียวกับ LINE)
 const ASK_SECRET = (process.env.ASK_SECRET || "").trim();
+// ยอมรับ secret จาก header "ชื่อไหนก็ได้" หรือใน body — กันปัญหาระบบภายนอก (เช่น Chat24) ส่ง header คนละชื่อ
+//  ปลอดภัย: ยังต้องมีค่า secret ที่ถูกต้องเป๊ะ (ASK_SECRET เป็นสตริงสุ่มยาว) แค่ไม่ผูกกับชื่อ header เดียว
+function askSecretOk(req) {
+  if (!ASK_SECRET) return false;
+  const strip = (s) => String(s || "").replace(/^Bearer\s+/i, "").trim();
+  const h = req.headers || {};
+  for (const k in h) {
+    const v = h[k];
+    if (typeof v === "string" && (v === ASK_SECRET || strip(v) === ASK_SECRET)) return true;
+  }
+  const b = req.body || {};
+  if (b.secret === ASK_SECRET || b.x_nong_secret === ASK_SECRET || b.token === ASK_SECRET) return true;
+  return false;
+}
 app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
-  if (!ASK_SECRET || (req.headers["x-nong-secret"] || "") !== ASK_SECRET) {
+  if (!askSecretOk(req)) {
     return res.status(401).json({ error: "unauthorized" });
   }
   const { userId, message, fromAdmin } = req.body || {};
