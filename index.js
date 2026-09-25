@@ -856,8 +856,8 @@ async function handleTextMessage(event) {
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: userText });
   if (!isAdmin) clearFollowup(userId); // ลูกค้าตอบกลับแล้ว → ไม่ต้องตามอัตโนมัติ
-  // ⚡ คำถามตายตัว → ตอบทันที ไม่เรียก AI (ประหยัด) · เรื่องห้องว่าง/ราคา/วัน จะไม่เข้าเงื่อนไขนี้ (ตัวกันชนใน staticFactAnswer)
-  if (!isAdmin) {
+  // ⚡ คำถามตายตัว → ตอบทันที ไม่เรียก AI (ประหยัด) · เรื่องห้องว่าง/ราคา/วัน จะไม่เข้าเงื่อนไขนี้ (ตัวกันชนใน staticFactAnswer) · ทำงานกับทุกคนรวมแอดมิน (เทสได้)
+  {
     const quick = staticFactAnswer(userText);
     if (quick) {
       history.push({ role: "assistant", content: quick });
@@ -923,7 +923,7 @@ async function handleTextMessage(event) {
       messages = [{ type: "text", text: replyText }];
     }
     // 🔘 เสนอห้อง/ราคา → แนบปุ่มกดให้ลูกค้าเลือกง่าย (ลดเงียบหาย)
-    if (!isAdmin && hasBookingIntent(history) && /฿|บาท/.test(replyText) && messages.length) {
+    if (hasBookingIntent(history) && /฿|บาท/.test(replyText) && messages.length) {
       messages[messages.length - 1] = { ...messages[messages.length - 1], quickReply: BOOKING_QUICK_REPLY };
     }
   }
