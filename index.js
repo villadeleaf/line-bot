@@ -1504,5 +1504,6 @@ const SELF_URL = PUBLIC_URL || "https://line-bot-p2ne.onrender.com";
 const KEEPALIVE_MS = 10 * 60 * 1000; // 10 นาที (ก่อน 15 นาทีที่จะหลับ)
 setInterval(() => {
   fetch(SELF_URL, { method: "GET" }).catch(() => {});
+  runFollowups().catch((e) => console.error("runFollowups error:", e && e.message)); // ตามลีดเงียบในตัว (ไม่ต้องพึ่ง cron ภายนอก)
 }, KEEPALIVE_MS);
 console.log(`keep-alive: ping ${SELF_URL} ทุก ${KEEPALIVE_MS / 60000} นาที (เปิดตลอด)`);
