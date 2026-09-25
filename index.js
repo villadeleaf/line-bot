@@ -475,6 +475,45 @@ async function getName(userId) {
 
 // ---- สถานะ "หยุดบอทให้ลูกค้าคนนี้" (แอดมินคุยเอง) ----
 const pausedUsers = new Map(); // customerId -> pausedAt (ms)
+// ---- Auto follow-up: จับลีดที่บอทเสนอราคาแล้วลูกค้าเงียบ → น้องลีฟตามให้เอง (ปลุกด้วย cron ภายนอกฟรี) ----
+const followups = new Map(); // userId -> { quotedAt, stage, name }
+const FOLLOWUP1_MS = Number(process.env.FOLLOWUP1_MS || 3 * 3600 * 1000);  // เงียบ ~3 ชม. → ตามรอบ 1
+const FOLLOWUP2_MS = Number(process.env.FOLLOWUP2_MS || 20 * 3600 * 1000); // จากรอบ 1 อีก ~20 ชม. (วันรุ่งขึ้น) → รอบ 2
+const FOLLOWUP_MSG = {
+  1: "สวัสดีค่ะคุณลูกค้า 🌿 ยังสนใจห้องพักที่คุยกันไว้อยู่ไหมคะ ถ้าสนใจ น้องลีฟเช็คห้องว่างอัปเดต + จัดให้เลยค่ะ 😊",
+  2: "คุณลูกค้าคะ 🌿 น้องลีฟยังยินดีดูแลการจองให้อยู่นะคะ ถ้าสนใจแจ้งได้เลยค่ะ เดี๋ยวเช็คห้องว่าง + จัดให้เรียบร้อยค่ะ 🙏",
+};
+function markQuoted(userId, name) { followups.set(userId, { quotedAt: Date.now(), stage: 0, name: name || "" }); }
+function clearFollowup(userId) { followups.delete(userId); }
+async function runFollowups() {
+  const now = Date.now();
+  const thHour = new Date(now + 7 * 3600 * 1000).getUTCHours();
+  if (thHour < 9 || thHour >= 21) return { skipped: "outside 09-21", pending: followups.size }; // ไม่รบกวนกลางดึก
+  let sent = 0;
+  for (const [userId, f] of Array.from(followups.entries())) {
+    if (isPaused(userId)) continue; // แอดมินคุยเองอยู่ → ไม่ตาม
+    const dueStage = (f.stage === 0 && now - f.quotedAt >= FOLLOWUP1_MS) ? 1
+                   : (f.stage === 1 && now - f.quotedAt >= FOLLOWUP1_MS + FOLLOWUP2_MS) ? 2
+                   : 0;
+    if (!dueStage) continue;
+    try {
+      await replyClient.pushMessage({ to: userId, messages: [{ type: "text", text: FOLLOWUP_MSG[dueStage] }] });
+      const h = conversations.get(userId) || [];
+      h.push({ role: "assistant", content: FOLLOWUP_MSG[dueStage] });
+      conversations.set(userId, h);
+      const m = chatMeta.get(userId) || {};
+      m.lastMsg = "(ตามลีดอัตโนมัติ) " + FOLLOWUP_MSG[dueStage].slice(0, 28);
+      chatMeta.set(userId, m);
+      sent++;
+      if (dueStage >= 2) followups.delete(userId); // ตามครบ 2 รอบแล้ว หยุด
+      else f.stage = dueStage;
+    } catch (e) {
+      console.error("followup push error:", e.message);
+      followups.delete(userId); // push ไม่ได้ (ลูกค้าบล็อก/ลบเพื่อน) → เลิกตาม
+    }
+  }
+  return { sent, pending: followups.size };
+}
 const AUTO_RESUME_MS = 2 * 60 * 60 * 1000; // ตื่นเองอัตโนมัติหลัง 2 ชม. (กันลืมกดให้บอทต่อ)
 function pauseUser(id) { pausedUsers.set(id, Date.now()); }
 function resumeUser(id) { pausedUsers.delete(id); }
@@ -794,6 +833,7 @@ async function handleTextMessage(event) {
 
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: userText });
+  if (!isAdmin) clearFollowup(userId); // ลูกค้าตอบกลับแล้ว → ไม่ต้องตามอัตโนมัติ
   if (history.length > MAX_TURNS * 2) {
     history = history.slice(-MAX_TURNS * 2);
   }
@@ -843,6 +883,8 @@ async function handleTextMessage(event) {
 
     history.push({ role: "assistant", content: replyText });
     conversations.set(userId, history);
+    // บอทเพิ่งเสนอราคา/ห้อง (มี ฿/บาท + อยู่ในโหมดจอง) → ตั้งนาฬิกาตามลีด เผื่อลูกค้าเงียบ
+    if (!isAdmin && hasBookingIntent(history) && /฿|บาท/.test(replyText)) markQuoted(userId, (chatMeta.get(userId) || {}).name);
     messages = buildMessages(userId, replyText);
     if (messages.length === 0) {
       messages = [{ type: "text", text: replyText }];
@@ -980,6 +1022,11 @@ app.get("/leaf/icon.svg", (_req, res) => res.type("image/svg+xml").send('<svg xm
 app.get("/leaf/icon-512.png", (_req, res) => res.sendFile(path.join(__dirname, "leaf-icon-512.png")));
 app.get("/leaf/sw.js", (_req, res) => res.type("application/javascript").send("self.addEventListener('install',function(e){self.skipWaiting();});self.addEventListener('activate',function(e){self.clients.claim();});self.addEventListener('fetch',function(e){});"));
 app.get("/leaf/api/ping", dashAuth, (_req, res) => res.json({ ok: true }));
+// ตัวปลุกจาก cron ภายนอก (ฟรี) → ตามลีดที่เงียบ + ปลุก Render ให้ตื่นในตัว
+app.all("/leaf/api/run-followups", dashAuth, async (_req, res) => {
+  try { res.json({ ok: true, ...(await runFollowups()) }); }
+  catch (e) { res.status(200).json({ ok: false, error: (e && e.message) || String(e) }); }
+});
 
 app.get("/leaf/api/faq", dashAuth, async (_req, res) => {
   try { const items = (faqEnabled() ? await loadFaq() : []).filter((x) => x && x.q && x.q.indexOf("__PAUSE__") !== 0); res.json({ items }); }
@@ -1080,6 +1127,7 @@ app.post("/leaf/api/reply", dashAuth, express.json({ limit: "16kb" }), async (re
     const m = chatMeta.get(userId) || {};
     m.lastMsg = "(แอดมินตอบ) " + message.slice(0, 45);
     m.needsHuman = false;
+    clearFollowup(userId); // แอดมินดูแลเองแล้ว → ไม่ต้องตามอัตโนมัติ
     m.at = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(11, 19);
     chatMeta.set(userId, m);
     res.json({ ok: true });
