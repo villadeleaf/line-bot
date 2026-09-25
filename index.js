@@ -485,6 +485,28 @@ const FOLLOWUP_MSG = {
 };
 function markQuoted(userId, name) { followups.set(userId, { quotedAt: Date.now(), stage: 0, name: name || "" }); }
 function clearFollowup(userId) { followups.delete(userId); }
+// ---- ⚡ คำถามตายตัว → ตอบเองทันที ไม่เรียก AI (ประหยัดค่าใช้จ่าย) · มีตัวกันชน: อะไรที่ต้องเช็ค/เปลี่ยนตามบริบท = ปล่อยให้ AI ----
+const DYNAMIC_RE = /ว่าง|จอง|ราคา|กี่บาท|เท่าไหร่|เท่าไร|กี่คืน|กี่ท่าน|กี่คน|วันที่|เดือน|มกรา|กุมภา|มีนา|เมษา|พฤษภา|มิถุนา|กรกฎา|สิงหา|กันยา|ตุลา|พฤศจิกา|ธันวา|เสริมเตียง|ส่วนลด|โปร|\d/;
+function staticFactAnswer(text) {
+  const t = (text || "").toLowerCase().trim();
+  if (!t || t.length > 40) return null;          // ยาว = มีบริบท → ให้ AI
+  if (DYNAMIC_RE.test(t)) return null;           // มีเรื่องห้องว่าง/ราคา/วัน → ให้ AI เช็คจริง
+  if (/wifi|ไวไฟ|วายฟาย|เน็ต|netflix|อินเทอร์เน็ต/.test(t)) return "มี WiFi ฟรี + Netflix ทุกห้องเลยค่ะ 📶 รหัส WiFi: Deleaf#251 ค่ะ 🌿";
+  if (/ที่จอดรถ|จอดรถ|parking/.test(t)) return "มีที่จอดรถฟรีค่ะ 🚗🌿";
+  if (/ที่ตั้ง|อยู่ที่ไหน|แผนที่|พิกัด|ที่อยู่|location|map/.test(t)) return "Villa de Leaf River Kaeng Krachan 🌿\n251 หมู่ 3 ต.แก่งกระจาน อ.แก่งกระจาน จ.เพชรบุรี 76170\n📍 แผนที่: https://maps.app.goo.gl/SC5nvt8kGNBbNdP27";
+  if (/เช็คอิน|เช็คเอาท|เช็กอิน|เช็กเอาท|กี่โมง|check.?in|check.?out/.test(t)) return "เช็คอิน 14:00–20:00 น. · เช็คเอาท์ก่อน 12:00 น. ค่ะ 🌿 (เข้าก่อนเวลาได้ถ้าห้องพร้อม อย่างน้อย 13:00)";
+  if (/พาหมา|พาน้องหมา|สัตว์เลี้ยง|เลี้ยงหมา|หมาได้ไหม|พาแมว|pet/.test(t)) return "พาน้องมาได้ค่ะ 🐶 เฉพาะห้อง Luxury Villa และ Pool Villa Pet-Friendly (มีค่าบริการสัตว์เลี้ยงเพิ่ม) แจ้งจำนวนน้องได้เลยค่ะ 🌿";
+  if (/สระว่ายน้ำ|มีสระ|ว่ายน้ำ|สระเกลือ/.test(t)) return "มีสระว่ายน้ำระบบเกลือกลางแจ้งส่วนกลาง ใช้ฟรีทุกห้องค่ะ 🏊 (ลึก ~1.2 ม.) · ส่วน Pool Villa มีสระส่วนตัวในหลังด้วยค่ะ";
+  return null;
+}
+// ---- 🔘 ปุ่มกด (Quick Reply) แนบตอนเสนอห้อง/ราคา → ลูกค้ากดง่าย ไม่ต้องพิมพ์ (ลดเงียบหาย) ----
+const BOOKING_QUICK_REPLY = {
+  items: [
+    { type: "action", action: { type: "message", label: "👍 สนใจจองเลย", text: "สนใจจองห้องนี้ค่ะ" } },
+    { type: "action", action: { type: "message", label: "🏡 ดูห้องอื่น", text: "ขอดูห้องอื่นค่ะ" } },
+    { type: "action", action: { type: "message", label: "📞 คุยกับพนักงาน", text: "ขอคุยกับพนักงานค่ะ" } },
+  ],
+};
 async function runFollowups() {
   const now = Date.now();
   const thHour = new Date(now + 7 * 3600 * 1000).getUTCHours();
@@ -834,6 +856,17 @@ async function handleTextMessage(event) {
   let history = conversations.get(userId) || [];
   history.push({ role: "user", content: userText });
   if (!isAdmin) clearFollowup(userId); // ลูกค้าตอบกลับแล้ว → ไม่ต้องตามอัตโนมัติ
+  // ⚡ คำถามตายตัว → ตอบทันที ไม่เรียก AI (ประหยัด) · เรื่องห้องว่าง/ราคา/วัน จะไม่เข้าเงื่อนไขนี้ (ตัวกันชนใน staticFactAnswer)
+  if (!isAdmin) {
+    const quick = staticFactAnswer(userText);
+    if (quick) {
+      history.push({ role: "assistant", content: quick });
+      conversations.set(userId, history);
+      const m = chatMeta.get(userId) || {}; m.lastMsg = "(คีย์เวิร์ดฟรี) " + quick.slice(0, 28); chatMeta.set(userId, m);
+      try { await lineClient.replyMessage({ replyToken: event.replyToken, messages: [{ type: "text", text: quick }] }); } catch (e) { console.error("quick reply error:", e.message); }
+      return;
+    }
+  }
   if (history.length > MAX_TURNS * 2) {
     history = history.slice(-MAX_TURNS * 2);
   }
@@ -888,6 +921,10 @@ async function handleTextMessage(event) {
     messages = buildMessages(userId, replyText);
     if (messages.length === 0) {
       messages = [{ type: "text", text: replyText }];
+    }
+    // 🔘 เสนอห้อง/ราคา → แนบปุ่มกดให้ลูกค้าเลือกง่าย (ลดเงียบหาย)
+    if (!isAdmin && hasBookingIntent(history) && /฿|บาท/.test(replyText) && messages.length) {
+      messages[messages.length - 1] = { ...messages[messages.length - 1], quickReply: BOOKING_QUICK_REPLY };
     }
   }
 
