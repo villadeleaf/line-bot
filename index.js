@@ -248,6 +248,31 @@ const bootAt = Date.now();
 // พักน้องลีฟ "รายคน" จากหน้า /leaf (แอดมินกดคุยเอง) — userId ที่พักอยู่ (คนละตัวกับ handover เดิม)
 const leafPausedUsers = new Set();
 
+// ---- โหมด "แอดมินไม่อยู่" → น้องลีฟดูแลลูกค้าเองเต็มที่ (auto นอกเวลาทำการ + ศุกร์เสาร์อาทิตย์ + กดเอง) ----
+//  โหมด "อยู่" (แอดมินตอบเอง) = จันทร์–ศุกร์ 10:00–21:00 · เสาร์-อาทิตย์ = บอทตอบทั้งวัน
+const PRESENT_DAYS = new Set([1, 2, 3, 4, 5]); // 0=อา 1=จ ... 6=ส  (จ-ศ = แอดมินตอบเอง)
+const PRESENT_START = 10 * 60;  // 10:00
+const PRESENT_END = 21 * 60;    // 21:00
+function adminPresentNow() {
+  const now = new Date(Date.now() + 7 * 3600 * 1000); // เวลาไทย
+  const dow = now.getUTCDay();
+  if (!PRESENT_DAYS.has(dow)) return false;           // ส-อา = บอทตอบทั้งวัน
+  const mins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  return mins >= PRESENT_START && mins <= PRESENT_END;
+}
+let awayManualAt = 0; // เวลาที่แอดมินกด "ไม่อยู่" (0 = ไม่ได้กด) · หมดอายุเองใน 12 ชม. กันลืม
+const AWAY_MANUAL_MS = 12 * 3600 * 1000;
+function awayManualActive() {
+  if (!awayManualAt) return false;
+  if (Date.now() - awayManualAt > AWAY_MANUAL_MS) { awayManualAt = 0; return false; }
+  return true;
+}
+// ไม่อยู่ = กดเอง (ยังไม่หมดอายุ) หรือ นอกเวลาทำการ/วันหยุด
+function isAwayNow() { return awayManualActive() || !adminPresentNow(); }
+function setAwayManual(on) { awayManualAt = on ? Date.now() : 0; persistPause("AWAY", on); }
+// กันเด้งเตือนแอดมินรัว ๆ ตอนโหมด "อยู่" (ลูกค้าคนเดิมพิมพ์หลายที = เตือนครั้งเดียวใน 10 นาที)
+const presentAlerted = new Map(); // userId -> ts
+
 // ---- จำสถานะ "พักบอท" ถาวร (กันหายตอน deploy) — เก็บใน Google Sheet เดิม (FAQ) เป็น marker __PAUSE__<key> = on/off ----
 //  key = userId (พักรายคน) หรือ "GLOBAL" (พักทั้งระบบ) · append-only: ค่าล่าสุดต่อ key = สถานะจริง
 const PAUSE_PREFIX = "__PAUSE__";
@@ -268,6 +293,7 @@ async function loadPausedFromSheet() {
       const key = x.q.slice(PAUSE_PREFIX.length);
       const on = String(x.a).trim().toLowerCase() === "on";
       if (key === "GLOBAL") botPaused = on;
+      else if (key === "AWAY") awayManualAt = on ? Date.now() : 0;
       else if (on) leafPausedUsers.add(key);
       else leafPausedUsers.delete(key);
     }
@@ -744,6 +770,26 @@ async function handleTextMessage(event) {
     return;
   }
 
+  // ---- โหมด "ไม่อยู่ / กลับมาแล้ว" (แอดมินสลับเอง) → น้องลีฟดูแลลูกค้าเองเต็มที่ / คืนให้แอดมินตอบเอง ----
+  if (isAdmin && /^(ไม่อยู่|ออกไปแป๊บ|ออกไปก่อน|ปิดรับ|ปิดรับแชท|โหมดไม่อยู่|บอทตอบแทน)\.?$/.test(trimmed)) {
+    setAwayManual(true);
+    await replyText1(event.replyToken, 'รับทราบค่ะ 🌿 เปิดโหมด "ไม่อยู่" แล้ว — น้องลีฟจะดูแลลูกค้าให้เองเต็มที่ทุกเรื่องเลยค่ะ\n(หมดอายุอัตโนมัติใน 12 ชม. กันลืม · พิมพ์ "กลับมาแล้ว" เมื่อพร้อมรับช่วงเองนะคะ)');
+    return;
+  }
+  if (isAdmin && /^(กลับมาแล้ว|อยู่แล้ว|เปิดรับ|เปิดรับแชท|ออนไลน์|โหมดอยู่|กลับมา)\.?$/.test(trimmed)) {
+    setAwayManual(false);
+    const note = adminPresentNow()
+      ? 'ตอนนี้อยู่ในเวลาทำการ (จ-ศ 10:00–21:00) น้องลีฟจะตอบแค่คำถามพื้นฐาน ที่เหลือรอคุณตอบเองนะคะ'
+      : 'ตอนนี้นอกเวลาทำการ/วันหยุด น้องลีฟยังดูแลลูกค้าเองอัตโนมัติอยู่ค่ะ';
+    await replyText1(event.replyToken, 'รับทราบค่ะ 🌿 ปิดโหมด "ไม่อยู่" แล้ว\n' + note);
+    return;
+  }
+  if (isAdmin && /^(สถานะ|เช็คโหมด|#status)\.?$/.test(trimmed)) {
+    const away = isAwayNow();
+    await replyText1(event.replyToken, `สถานะน้องลีฟตอนนี้: ${away ? '🔵 "ไม่อยู่" — บอทดูแลลูกค้าเองทุกเรื่อง' : '🟢 "อยู่" — บอทตอบพื้นฐาน · ที่เหลือรอคุณตอบเอง'}\n(กดเอง: ${awayManualActive() ? "ไม่อยู่ (แอดมินกด)" : "ตามเวลาอัตโนมัติ"} · เวลาทำการ จ-ศ 10:00–21:00)`);
+    return;
+  }
+
   // ---- คำสั่ง #สอน คำถาม | คำตอบ : สอนบอท (เฉพาะแอดมิน) ----
   if (trimmed.startsWith("#สอน")) {
     if (!isAdmin) {
@@ -869,6 +915,21 @@ async function handleTextMessage(event) {
       return;
     }
   }
+  // ---- โหมด "อยู่" (แอดมินตอบเอง จ-ศ 10:00–21:00): คำถามพื้นฐานตอบไปแล้วด้านบน · ที่เหลือ (คุย/จอง/ราคา/ส่วนลด) = บอทเงียบ + เด้งเตือนแอดมินให้ตอบเอง ----
+  if (!isAdmin && !isAwayNow()) {
+    conversations.set(userId, history);
+    const meta = chatMeta.get(userId) || {}; meta.lastMsg = '(โหมดอยู่ · รอแอดมินตอบ) ' + userText.slice(0, 24); chatMeta.set(userId, meta);
+    const last = presentAlerted.get(userId) || 0;
+    if (Date.now() - last > 10 * 60 * 1000) {          // เตือนครั้งเดียวใน 10 นาที กันรัว
+      presentAlerted.set(userId, Date.now());
+      try {
+        const nm = await getName(userId);
+        await pushAlert(userId, nm, "lead", '💬 ลูกค้าทักช่วงเวลาทำการ (โหมด "อยู่") รอทีมงานตอบเอง: "' + clip(userText, 60) + '"');
+      } catch (e) { console.error("present-mode alert error:", e.message); }
+    }
+    return;
+  }
+
   if (history.length > MAX_TURNS * 2) {
     history = history.slice(-MAX_TURNS * 2);
   }
@@ -887,6 +948,14 @@ async function handleTextMessage(event) {
     extra += await buildAvailabilityExtra(history, userText);
   } catch (e) {
     console.error("avail extra error (webhook):", e.message);
+  }
+
+  // ---- โหมด "ไม่อยู่": แอดมินไม่สะดวกตอบ → น้องลีฟดูแลลูกค้าให้จบด้วยตัวเองให้มากที่สุด ----
+  if (!isAdmin && isAwayNow()) {
+    extra += "\n\n[โหมดแอดมินไม่อยู่ตอนนี้] ทีมงานยังไม่สะดวกตอบเอง น้องลีฟต้องดูแลลูกค้าให้จบด้วยตัวเองให้มากที่สุด: " +
+      "(1) ตอบคำถามที่มีข้อมูลให้ครบถ้วน ชัดเจน อบอุ่น อย่าโยนให้ทีมถ้าตอบเองได้ ช่วยปิดการขาย/ชวนจองต่อได้เลย " +
+      "(2) เรื่องส่วนลด/ราคาพิเศษ: บอกเฉพาะโปรที่มีจริงในข้อมูลเท่านั้น ห้ามคิดส่วนลดเอง ถ้าลูกค้าขอมากกว่านั้นให้บอกว่าจะให้ทีมงานพิจารณาและติดต่อกลับ " +
+      "(3) เรื่องที่ต้องให้ทีมยืนยันจริง ๆ (เกินข้อมูลที่มี): ตอบอย่างมั่นใจว่า \"รับเรื่องแล้วค่ะ เดี๋ยวทีมงานติดต่อกลับโดยเร็ว/ในเวลาทำการ (จ-ศ 10:00–21:00)\" อย่าปล่อยให้ลูกค้าเคว้ง และยังคงใส่มาร์กเกอร์ [[ALERT:...]] ตามปกติเพื่อให้ทีมตามต่อได้";
   }
 
   let replyText;
@@ -1094,13 +1163,19 @@ app.post("/leaf/api/test", dashAuth, express.json({ limit: "64kb" }), async (req
 app.get("/leaf/api/status", dashAuth, async (_req, res) => {
   let faqCount = null;
   try { if (faqEnabled()) faqCount = (await loadFaq()).length; } catch (_e) {}
-  res.json({ online: true, paused: botPaused, faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
+  res.json({ online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
 });
 app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   botPaused = !!(req.body && req.body.on);
   console.log("dashboard: botPaused =", botPaused);
   persistPause("GLOBAL", botPaused); // จำถาวร กันหายตอน deploy
   res.json({ paused: botPaused });
+});
+// สลับโหมด "ไม่อยู่" (แอดมินตอบเอง/บอทตอบแทน) จากหน้า /leaf
+app.post("/leaf/api/away", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
+  setAwayManual(!!(req.body && req.body.on));
+  console.log("dashboard: awayManual =", awayManualActive());
+  res.json({ away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow() });
 });
 // ห้องแชท: รายชื่อบทสนทนาลูกค้า (สดจาก chatMeta) + อ่านบทสนทนารายคน (จาก conversations)
 app.get("/leaf/api/chats", dashAuth, (_req, res) => {

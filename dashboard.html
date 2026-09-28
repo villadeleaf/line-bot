@@ -221,6 +221,10 @@
         <div class="info"><div class="t" id="pauseTitle">น้องลีฟเปิดอยู่</div><div class="d" id="pauseDesc">กำลังตอบลูกค้าอัตโนมัติ</div></div>
         <button class="toggle" id="pauseTgl" onclick="togglePause()"><span class="k"></span></button>
       </div>
+      <div class="card pause-card">
+        <div class="info"><div class="t" id="awayTitle">🟢 โหมด "อยู่" — คุณตอบเอง</div><div class="d" id="awayDesc">จ-ศ 10:00–21:00 · น้องลีฟตอบแค่คำถามพื้นฐาน ที่เหลือรอคุณ</div></div>
+        <button class="toggle" id="awayTgl" onclick="toggleAway()"><span class="k"></span></button>
+      </div>
       <div class="stat-grid">
         <div class="card stat"><div class="l">💬 ถามล่าสุด</div><div class="n" id="stAsk">–</div></div>
         <div class="card stat"><div class="l">📚 ความรู้ที่สอน</div><div class="n g" id="stFaq">–</div></div>
@@ -375,7 +379,7 @@
   /* STATUS */
   var paused=false;
   function loadStatus(){ api('status').then(function(r){ document.getElementById('stAsk').textContent=(r.recentAsk||[]).length; document.getElementById('stFaq').textContent=r.faqCount!=null?r.faqCount:'–'; document.getElementById('stUp').textContent=r.online?'ออนไลน์':'—';
-      paused=!!r.paused; renderPause();
+      paused=!!r.paused; renderPause(); renderAway(r);
       var el=document.getElementById('recent'); var list=(r.recentAsk||[]).slice().reverse();
       if(!list.length){ el.innerHTML='<div class="empty">ยังไม่มีคำถามเข้ามา</div>'; return; }
       el.innerHTML=''; list.forEach(function(a){ var d=document.createElement('div'); d.className='log-item'; var ok=(a.result||'').indexOf('✅')>=0;
@@ -383,6 +387,11 @@
     .catch(function(){ document.getElementById('recent').innerHTML='<div class="empty">โหลดไม่สำเร็จ</div>'; }); }
   function renderPause(){ var t=document.getElementById('pauseTgl'); t.classList.toggle('off',paused); document.getElementById('pauseTitle').textContent=paused?'น้องลีฟพักอยู่':'น้องลีฟเปิดอยู่'; document.getElementById('pauseDesc').textContent=paused?'หยุดตอบลูกค้าชั่วคราว — ทีมตอบเอง':'กำลังตอบลูกค้าอัตโนมัติ'; document.getElementById('stTop').textContent=paused?'พักอยู่':'ออนไลน์'; }
   function togglePause(){ var next=!paused; api('pause',{method:'POST',body:JSON.stringify({on:next})}).then(function(r){ paused=!!r.paused; renderPause(); toast(paused?'⏸️ พักน้องลีฟแล้ว':'▶️ เปิดน้องลีฟแล้ว'); }).catch(function(){ toast('เปลี่ยนไม่สำเร็จ'); }); }
+  function renderAway(r){ var manual=!!r.awayManual, away=!!r.away; var t=document.getElementById('awayTgl'); if(t) t.classList.toggle('off',!manual);
+    var ti=document.getElementById('awayTitle'), d=document.getElementById('awayDesc');
+    if(away){ ti.textContent='🔵 โหมด "ไม่อยู่" — น้องลีฟดูแลเอง'; d.textContent=manual?'คุณกดไว้เอง · น้องลีฟตอบลูกค้าทุกเรื่อง (หมดอายุเอง 12 ชม.)':'นอกเวลาทำการ/วันหยุด · น้องลีฟตอบลูกค้าทุกเรื่อง'; }
+    else { ti.textContent='🟢 โหมด "อยู่" — คุณตอบเอง'; d.textContent='จ-ศ 10:00–21:00 · น้องลีฟตอบแค่คำถามพื้นฐาน ที่เหลือรอคุณ'; } }
+  function toggleAway(){ var t=document.getElementById('awayTgl'); var cur=t&&!t.classList.contains('off'); var next=!cur; api('away',{method:'POST',body:JSON.stringify({on:next})}).then(function(r){ renderAway(r); toast(r.away?'🔵 โหมดไม่อยู่ — น้องลีฟดูแลลูกค้าเอง':'🟢 โหมดอยู่ — คุณตอบเอง'); }).catch(function(){ toast('เปลี่ยนไม่สำเร็จ'); }); }
 
   var tt; function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(function(){t.classList.remove('show');},2200); }
 
