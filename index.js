@@ -269,7 +269,7 @@ function awayManualActive() {
 }
 // ไม่อยู่ = กดเอง (ยังไม่หมดอายุ) หรือ นอกเวลาทำการ/วันหยุด
 function isAwayNow() { return awayManualActive() || !adminPresentNow(); }
-function setAwayManual(on) { awayManualAt = on ? Date.now() : 0; persistPause("AWAY", on); }
+function setAwayManual(on) { awayManualAt = on ? Date.now() : 0; persistPause("AWAY", on); console.log(`[MODE] สลับโหมด → ${on ? '🔵 ไม่อยู่ (กดเอง 12ชม.)' : '🟢 ตามเวลาอัตโนมัติ'}`); }
 // กันเด้งเตือนแอดมินรัว ๆ ตอนโหมด "อยู่" (ลูกค้าคนเดิมพิมพ์หลายที = เตือนครั้งเดียวใน 10 นาที)
 const presentAlerted = new Map(); // userId -> ts
 
@@ -297,7 +297,7 @@ async function loadPausedFromSheet() {
       else if (on) leafPausedUsers.add(key);
       else leafPausedUsers.delete(key);
     }
-    console.log("loaded pause state from sheet: global=" + botPaused + " · users=" + leafPausedUsers.size);
+    console.log("loaded pause state from sheet: global=" + botPaused + " · users=" + leafPausedUsers.size + " · awayManual=" + awayManualActive() + " (present=" + adminPresentNow() + " → " + (isAwayNow() ? "โหมดไม่อยู่" : "โหมดอยู่") + ")");
   } catch (e) {
     console.error("loadPausedFromSheet error:", e.message);
   }
@@ -917,6 +917,7 @@ async function handleTextMessage(event) {
   }
   // ---- โหมด "อยู่" (แอดมินตอบเอง จ-ศ 10:00–21:00): คำถามพื้นฐานตอบไปแล้วด้านบน · ที่เหลือ (คุย/จอง/ราคา/ส่วนลด) = บอทเงียบ + เด้งเตือนแอดมินให้ตอบเอง ----
   if (!isAdmin && !isAwayNow()) {
+    console.log(`[MODE] 🟢 อยู่→เงียบ (รอแอดมิน) · ${userId.slice(-6)} · "${userText.slice(0, 40)}"`);
     conversations.set(userId, history);
     const meta = chatMeta.get(userId) || {}; meta.lastMsg = '(โหมดอยู่ · รอแอดมินตอบ) ' + userText.slice(0, 24); chatMeta.set(userId, meta);
     const last = presentAlerted.get(userId) || 0;
@@ -952,6 +953,7 @@ async function handleTextMessage(event) {
 
   // ---- โหมด "ไม่อยู่": แอดมินไม่สะดวกตอบ → น้องลีฟดูแลลูกค้าให้จบด้วยตัวเองให้มากที่สุด ----
   if (!isAdmin && isAwayNow()) {
+    console.log(`[MODE] 🔵 ไม่อยู่→บอทตอบ (${awayManualActive() ? "กดเอง" : "นอกเวลา/วันหยุด"}) · ${userId.slice(-6)} · "${userText.slice(0, 40)}"`);
     extra += "\n\n[โหมดแอดมินไม่อยู่ตอนนี้] ทีมงานยังไม่สะดวกตอบเอง น้องลีฟต้องดูแลลูกค้าให้จบด้วยตัวเองให้มากที่สุด: " +
       "(1) ตอบคำถามที่มีข้อมูลให้ครบถ้วน ชัดเจน อบอุ่น อย่าโยนให้ทีมถ้าตอบเองได้ ช่วยปิดการขาย/ชวนจองต่อได้เลย " +
       "(2) เรื่องส่วนลด/ราคาพิเศษ: บอกเฉพาะโปรที่มีจริงในข้อมูลเท่านั้น ห้ามคิดส่วนลดเอง ถ้าลูกค้าขอมากกว่านั้นให้บอกว่าจะให้ทีมงานพิจารณาและติดต่อกลับ " +
