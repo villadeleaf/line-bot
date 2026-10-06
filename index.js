@@ -1165,7 +1165,7 @@ app.post("/leaf/api/test", dashAuth, express.json({ limit: "64kb" }), async (req
 app.get("/leaf/api/status", dashAuth, async (_req, res) => {
   let faqCount = null;
   try { if (faqEnabled()) faqCount = (await loadFaq()).length; } catch (_e) {}
-  res.json({ build: "askgate-2026-10-06b", online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
+  res.json({ build: "askgate-2026-10-06c-noalert", online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
 });
 app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   botPaused = !!(req.body && req.body.on);
@@ -1317,17 +1317,10 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
       askRec.ms = Date.now() - _t0;
       return res.status(200).json({ reply: quick });
     }
-    askRec.result = '🟢 อยู่→เงียบ (รอแอดมิน)';
+    askRec.result = '🟢 อยู่→เงียบ (รอแอดมินตอบเอง · ไม่เด้งเตือน)';
     askRec.ms = Date.now() - _t0;
     chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 40), pictureUrl: String((req.body || {}).pictureUrl || (req.body || {}).picture || "").slice(0, 400), at: askRec.at, lastMsg: '(โหมดอยู่ · รอแอดมิน) ' + String(message).slice(0, 40), needsHuman: true });
-    try {
-      const last = presentAlerted.get(userId) || 0;
-      if (Date.now() - last > 10 * 60 * 1000) {
-        presentAlerted.set(userId, Date.now());
-        const nm = String(req.body.name || "").trim() || (await getName(userId));
-        await pushAlert(userId, nm, "lead", '💬 ลูกค้าทักช่วงเวลาทำการ (โหมด "อยู่") รอทีมงานตอบเอง: "' + clip(String(message), 60) + '"');
-      }
-    } catch (e) { console.error("ask present-mode alert error:", e.message); }
+    // ไม่เด้งแจ้งเตือน: ลูกค้าทักช่วงเวลาทำการ แอดมินเห็นในกล่องแชทอยู่แล้ว (ตามที่เจ้าของขอ)
     return res.status(200).json({ reply: "", needsHuman: true, type: "lead", detail: 'โหมดอยู่ (เวลาทำการ จ-ศ 10-21) — รอแอดมินตอบเอง', present: true });
   }
 
