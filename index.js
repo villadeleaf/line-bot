@@ -1165,7 +1165,7 @@ app.post("/leaf/api/test", dashAuth, express.json({ limit: "64kb" }), async (req
 app.get("/leaf/api/status", dashAuth, async (_req, res) => {
   let faqCount = null;
   try { if (faqEnabled()) faqCount = (await loadFaq()).length; } catch (_e) {}
-  res.json({ build: "awaygate-2026-10-06", online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
+  res.json({ build: "askgate-2026-10-06b", online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
 });
 app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   botPaused = !!(req.body && req.body.on);
@@ -1306,6 +1306,29 @@ app.post("/ask", express.json({ limit: "256kb" }), async (req, res) => {
     askRec.ms = Date.now() - _t0;
     chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 40), pictureUrl: String((req.body || {}).pictureUrl || (req.body || {}).picture || "").slice(0, 400), at: askRec.at, lastMsg: String(message).slice(0, 60), needsHuman: true });
     return res.status(200).json({ reply: "", needsHuman: true, type: "help", detail: "แอดมินกำลังดูแลแชทนี้เอง", paused: true });
+  }
+
+  // ---- โหมด "อยู่" (เวลาทำการ จ-ศ 10:00–21:00): ลูกค้าทัก → บอทตอบแค่คำถามพื้นฐาน · ที่เหลือ (จอง/ราคา/คุย) เงียบ + เด้งเตือนแอดมินให้ตอบเอง ----
+  //   (ด่านนี้ต้องมีใน /ask ด้วย เพราะข้อความลูกค้าเข้าทาง /ask ไม่ใช่ /webhook)
+  if (!fromAdmin && !req.body.test && !isAwayNow()) {
+    const quick = staticFactAnswer(String(message));
+    if (quick) {
+      askRec.result = '🟢 อยู่→ตอบ FAQ พื้นฐาน';
+      askRec.ms = Date.now() - _t0;
+      return res.status(200).json({ reply: quick });
+    }
+    askRec.result = '🟢 อยู่→เงียบ (รอแอดมิน)';
+    askRec.ms = Date.now() - _t0;
+    chatMeta.set(userId, { name: String(req.body.name || "").slice(0, 40), pictureUrl: String((req.body || {}).pictureUrl || (req.body || {}).picture || "").slice(0, 400), at: askRec.at, lastMsg: '(โหมดอยู่ · รอแอดมิน) ' + String(message).slice(0, 40), needsHuman: true });
+    try {
+      const last = presentAlerted.get(userId) || 0;
+      if (Date.now() - last > 10 * 60 * 1000) {
+        presentAlerted.set(userId, Date.now());
+        const nm = String(req.body.name || "").trim() || (await getName(userId));
+        await pushAlert(userId, nm, "lead", '💬 ลูกค้าทักช่วงเวลาทำการ (โหมด "อยู่") รอทีมงานตอบเอง: "' + clip(String(message), 60) + '"');
+      }
+    } catch (e) { console.error("ask present-mode alert error:", e.message); }
+    return res.status(200).json({ reply: "", needsHuman: true, type: "lead", detail: 'โหมดอยู่ (เวลาทำการ จ-ศ 10-21) — รอแอดมินตอบเอง', present: true });
   }
 
   // ---- โหมดทีมงานตอบ (relay): ทีมพิมพ์คำตอบในระบบเฮีย → น้องลีฟเรียบเรียงเป็นภาษาตัวเอง → ส่งกลับให้ระบบเฮียส่งลูกค้า ----
