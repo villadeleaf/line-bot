@@ -1165,7 +1165,7 @@ app.post("/leaf/api/test", dashAuth, express.json({ limit: "64kb" }), async (req
 app.get("/leaf/api/status", dashAuth, async (_req, res) => {
   let faqCount = null;
   try { if (faqEnabled()) faqCount = (await loadFaq()).length; } catch (_e) {}
-  res.json({ online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
+  res.json({ build: "awaygate-2026-10-06", online: true, paused: botPaused, away: isAwayNow(), awayManual: awayManualActive(), present: adminPresentNow(), faqCount, recentAsk: recentAsk.slice(-15), uptimeMin: Math.round((Date.now() - bootAt) / 60000) });
 });
 app.post("/leaf/api/pause", dashAuth, express.json({ limit: "8kb" }), (req, res) => {
   botPaused = !!(req.body && req.body.on);
